@@ -356,41 +356,54 @@ def exp6_markouts(n_big, reps, ns, seed=6):
 
 
 # --------------------------------------------------------------------------- #
-# EXP-7  Models that misread PUBLIC information: raw model vs Benter blend
+# EXP-7  Models that misread PUBLIC information: raw model vs Benter blend.
+# Flat stakes, so profit per game matters as much as ROI per bet.
 # --------------------------------------------------------------------------- #
-def exp7_blend(fits, power_reps, n_eval=200_000, n_train=10_000, n_power=2000, seed=7):
+def exp7_blend(fits, power_reps, n_eval=100_000, n_power=2000, seed=7):
     rng = np.random.default_rng(seed)
     beta, thr, cap, VB = CLONE[0], CLONE[1], PARAMS["MAX_ODDS"], PARAMS["V_EDGE"]
     out = []
     for pub_err in (0.0, 0.005, 0.02):
         def model_p(g):
             n = g["A"].size
-            s = g["B"] + rng.normal(0, PARAMS["sig_common"], n) + rng.normal(0, PARAMS["sig_idio"], n)
+            s_ = g["B"] + rng.normal(0, PARAMS["sig_common"], n) + rng.normal(0, PARAMS["sig_idio"], n)
             a_seen = g["A"] + (rng.normal(0, np.sqrt(pub_err), n) if pub_err > 0 else 0.0)
-            return norm.cdf((a_seen + beta * s) / np.sqrt(1 - PARAMS["VA"]))
+            return norm.cdf((a_seen + beta * s_) / np.sqrt(1 - PARAMS["VA"]))
 
-        raw, blend, rate_raw, rate_blend = [], [], [], []
-        for _ in range(fits):
-            gt = draw_games(n_train, rng, VB=VB)                  # past games: fit the blend
-            coef = tk.fit_blend(gt["y"], gt["q15"], model_p(gt))
-            ge = draw_games(n_eval, rng, VB=VB)                   # later games: bet
-            pe = model_p(ge)
-            r, b = tk.flat_bet_returns(pe, ge["oa15"], ge["ob15"], ge["y"], thr, cap)
-            rb, bb = tk.flat_bet_returns(tk.blend_prob(ge["q15"], pe, coef), ge["oa15"], ge["ob15"],
-                                         ge["y"], thr, cap)
-            raw.append(r.sum() / max(b.sum(), 1))
-            blend.append(rb.sum() / max(bb.sum(), 1))
-            rate_raw.append(b.mean())
-            rate_blend.append(bb.mean())
         rej = 0
         for _ in range(power_reps):
             gp = draw_games(n_power, rng, VB=VB)
             rej += tk.encompassing_test(gp["y"], gp["q15"], model_p(gp), np.arange(n_power))["p_one_sided"] < 0.05
-        out.append(dict(public_info_error_var=pub_err,
-                        raw_roi=float(np.mean(raw)), raw_roi_se=float(np.std(raw) / np.sqrt(fits)),
-                        blend_roi=float(np.mean(blend)), blend_roi_se=float(np.std(blend) / np.sqrt(fits)),
-                        raw_bet_rate=float(np.mean(rate_raw)), blend_bet_rate=float(np.mean(rate_blend)),
-                        encompassing_power_2000_games=rej / power_reps))
+        for n_train in (2000, 10000):
+            stats_ = {k: [] for k in ("raw_profit", "raw_bets", "blend_profit", "blend_bets")}
+            for _ in range(fits):
+                gt = draw_games(n_train, rng, VB=VB)              # past games: fit the blend
+                coef = tk.fit_blend(gt["y"], gt["q15"], model_p(gt))
+                ge = draw_games(n_eval, rng, VB=VB)               # later, independent games: bet
+                pe = model_p(ge)
+                r, b = tk.flat_bet_returns(pe, ge["oa15"], ge["ob15"], ge["y"], thr, cap)
+                rb, bb = tk.flat_bet_returns(tk.blend_prob(ge["q15"], pe, coef), ge["oa15"], ge["ob15"],
+                                             ge["y"], thr, cap)
+                stats_["raw_profit"].append(r.sum())
+                stats_["raw_bets"].append(b.sum())
+                stats_["blend_profit"].append(rb.sum())
+                stats_["blend_bets"].append(bb.sum())
+            st = {k: np.array(v, float) for k, v in stats_.items()}
+            fit_roi = st["blend_profit"] / np.maximum(st["blend_bets"], 1)
+            out.append(dict(
+                public_info_error_var=pub_err, n_train=n_train, fits=fits,
+                encompassing_power_2000_games=rej / power_reps,
+                raw_roi_pooled=float(st["raw_profit"].sum() / st["raw_bets"].sum()),
+                raw_profit_per_game=float(st["raw_profit"].sum() / (fits * n_eval)),
+                raw_bet_rate=float(st["raw_bets"].sum() / (fits * n_eval)),
+                blend_roi_pooled=float(st["blend_profit"].sum() / max(st["blend_bets"].sum(), 1)),
+                blend_profit_per_game=float(st["blend_profit"].sum() / (fits * n_eval)),
+                blend_bet_rate=float(st["blend_bets"].sum() / (fits * n_eval)),
+                blend_bet_rate_min=float(st["blend_bets"].min() / n_eval),
+                blend_bet_rate_max=float(st["blend_bets"].max() / n_eval),
+                blend_share_of_fits_losing=float(np.mean(st["blend_profit"] < 0)),
+                blend_roi_fit_p10=float(np.percentile(fit_roi, 10)),
+                blend_roi_fit_p90=float(np.percentile(fit_roi, 90))))
     return out
 
 
@@ -407,7 +420,7 @@ def one_gate_replication(world, n, B, seed):
     models = spec["models"](rng)
     g = draw_games(n, rng, VB=spec["VB"], margin=spec["margin"])
     R, bet, P = returns_15(g, models, rng)
-    gate = tk.information_gate(g["y"], g["q15"], P, reps=B, seed=int(rng.integers(2 ** 31)))
+    gate = tk.information_gate(g["y"], g["q15"], P, np.arange(n), reps=B, seed=int(rng.integers(2 ** 31)))
     spa = tk.spa_vs_no_bet(R, reps=B, seed=int(rng.integers(2 ** 31)))
     k_sr, k_info = int(tk.sharpe(R).argmax()), gate["best"]
     sig = gate["significant"]
@@ -450,40 +463,66 @@ def exp8_gates(reps, n, B, seed=8, processes=4):
 
 
 # --------------------------------------------------------------------------- #
-# EXP-9  Live rules under continuous monitoring, and the drop-top-1% rule
+# EXP-9  Live rule on REALISED P&L under continuous monitoring, and the
+# drop-top-1% rule
 # --------------------------------------------------------------------------- #
+def _decide_all(returns):
+    dec, when = [], []
+    for r in returns:
+        o = tk.pnl_eprocess(r)
+        dec.append(o["decision"])
+        when.append(o["game"])
+    dec = np.array(dec)
+    decided = [w for w in when if w is not None]
+    return dict(scale=float((dec == "scale").mean()), kill=float((dec == "kill").mean()),
+                undecided=float((dec == "continue").mean()),
+                median_bets_to_decision_if_decided=float(np.median(decided)) if decided else None)
+
+
 def exp9_live(paths, n_bets=5000, seed=9):
     rng = np.random.default_rng(seed)
     out = {}
-    scenarios = {"break_even (no edge)": 0.0, "claim right (+5%)": 0.05,
-                 "overconfident (claims +5%, true +2%)": 0.02, "losing (true -3%)": -0.03}
-    for label, true_edge in scenarios.items():
-        odds = rng.uniform(1.5, 3.5, (paths, n_bets))
-        b = 1.0 / odds
-        claim = np.minimum(b * 1.05, 0.99)
-        won = rng.random((paths, n_bets)) < np.clip(b * (1 + true_edge), 0, 1)
-        dec, when = [], []
-        for i in range(paths):
-            _, d, t = tk.sprt_break_even(won[i], claim[i], odds[i])
-            dec.append(d)
-            when.append(t if t is not None else n_bets)
-        prof = np.where(won, odds - 1, -1.0)
-        k = np.arange(1, n_bets + 1)
+    odds = rng.uniform(1.5, 3.5, (paths, n_bets))
+    k = np.arange(1, n_bets + 1)
+    for label, roi in (("break-even (no edge)", 0.0), ("real +5% on every bet", 0.05),
+                       ("real +2% on every bet", 0.02), ("losing -3% on every bet", -0.03),
+                       ("mixed: 40% of bets +5%, 60% -5% (overall -1%)", None),
+                       ("+2% at requested odds, filled 0-8% worse", "slip")):
+        o = odds
+        if roi is None:
+            p_win = (1 + np.where(rng.random((paths, n_bets)) < 0.4, 0.05, -0.05)) / odds
+        elif roi == "slip":
+            p_win = 1.02 / odds
+            o = odds * (1 - rng.uniform(0, 0.08, (paths, n_bets)))
+        else:
+            p_win = (1 + roi) / odds
+        prof = np.where(rng.random((paths, n_bets)) < np.clip(p_win, 0, 1), o - 1, -1.0)
         mean = np.cumsum(prof, 1) / k
         sd = np.sqrt(np.maximum(np.cumsum(prof ** 2, 1) / k - mean ** 2, 1e-12))
-        t_run = mean / (sd / np.sqrt(k))
-        dec = np.array(dec)
-        out[label] = dict(sprt_scale=float((dec == "scale").mean()), sprt_kill=float((dec == "kill").mean()),
-                          sprt_undecided=float((dec == "continue").mean()),
-                          median_bets_to_decision=float(np.median(when)),
-                          naive_t_above_1_645_at_any_check=float((t_run[:, 29:] > 1.645).any(1).mean()),
-                          naive_t_below_minus_1_645_at_any_check=float((t_run[:, 29:] < -1.645).any(1).mean()))
-    # drop-top-1% rule: real +3% edge, 2,000 bets at fixed odds
+        res = _decide_all(prof)
+        res["true_roi_per_bet"] = float(np.mean(p_win * o - 1))
+        res["naive_t_above_1_645_at_any_check"] = float((mean / (sd / np.sqrt(k)) > 1.645)[:, 29:].any(1).mean())
+        out[label] = res
+    # re-betting the same game at 20:00 only when the price moved against the
+    # 15:00 bet ("chasing"), zero margin, no information: bets summed per game
+    chase = []
+    for _ in range(paths):
+        g = draw_games(n_bets, rng, margin=0.0)
+        side_a = rng.random(n_bets) < 0.5
+        q15 = np.where(side_a, g["q15"], 1 - g["q15"])
+        q20 = np.where(side_a, g["q20"], 1 - g["q20"])
+        ys = np.where(side_a, g["y"], 1 - g["y"])
+        ok15 = q15 >= 1 / PARAMS["MAX_ODDS"]
+        again = ok15 & (q20 < q15) & (q20 >= 1 / PARAMS["MAX_ODDS"])
+        chase.append(np.where(ok15, ys / q15 - 1, 0.0)[ok15] + np.where(again, ys / q20 - 1, 0.0)[ok15])
+    res = _decide_all(chase)
+    res["true_roi_per_bet"] = 0.0
+    out["chasing at 20:00 (zero EV, bets summed per game)"] = res
     trim = {}
-    for o in (1.9, 2.5, 3.5, 5.0):
-        won = rng.random((paths, 2000)) < 1.03 / o
-        prof = np.sort(np.where(won, o - 1, -1.0), axis=1)[:, :-20]    # drop the 20 best bets
-        trim[str(o)] = float((prof.mean(1) <= 0).mean())
+    for o_ in (1.9, 2.5, 3.5, 5.0):
+        won = rng.random((paths, 2000)) < 1.03 / o_
+        prof = np.sort(np.where(won, o_ - 1, -1.0), axis=1)[:, :-20]    # drop the 20 best bets
+        trim[str(o_)] = float((prof.mean(1) <= 0).mean())
     out["drop_top_1pct_kills_real_3pct_edge_share"] = trim
     return out
 
@@ -535,10 +574,75 @@ def exp10_sizes(reps, seed=10, processes=4):
     return res
 
 
+# --------------------------------------------------------------------------- #
+# EXP-11  Information-gate size when the price's own calibration is not
+# logit-linear (scenarios designed by an independent review): no model has
+# private information in any cell.
+# --------------------------------------------------------------------------- #
+def _expit(x):
+    return 1 / (1 + np.exp(-x))
+
+
+def _gate_world(case, n, seed, K=200):
+    rng = np.random.default_rng(seed)
+    strata = None
+    if case == "drift":                      # two seasons, opposite biases; models lean on each
+        lq = rng.normal(0, 1.5, n)
+        strata = (np.arange(n) >= n // 2).astype(int)
+        bt = np.where(strata == 0, 1.2, 0.85)
+        y = (rng.random(n) < _expit(bt * lq)).astype(float)
+        P = _expit(lq[:, None] * (1 + 0.1 * (bt - 1))[:, None] + 0.1 * rng.normal(size=(n, 1))
+                   + 0.03 * rng.normal(size=(n, K)))
+        return y, _expit(lq), P, strata
+    z = np.clip(rng.normal(0, 2.2, n), -3.6, 3.6)
+    if case == "devig":                      # book adds the margin additively, you de-vig multiplicatively
+        pi = _expit(z)
+        q = tk.devig_multiplicative(1 / (pi + 0.025), 1 / (1 - pi + 0.025))
+    else:                                    # "flb": nonlinear favourite-longshot bias
+        q = _expit(z)
+        pi = _expit(z * (1 + 0.06 * np.abs(z)))
+    y = (rng.random(n) < pi).astype(float)
+    noise = 0.15 * rng.normal(size=(n, 1)) + 0.05 * rng.normal(size=(n, K))
+    if case == "devig":                      # calibrated game-state models (they see the truth, not the price)
+        P = _expit(np.log(pi / (1 - pi))[:, None] + noise)
+    else:                                    # nonlinear functions of the price
+        base = np.clip(0.5 + np.linspace(0.85, 1.1, K)[None, :] * (q[:, None] - 0.5), 0.005, 0.995)
+        P = _expit(np.log(base / (1 - base)) + noise)
+    return y, q, P, strata
+
+
+def _gate_task(args):
+    case, n, seed = args
+    y, q, P, strata = _gate_world(case, n, seed)
+    g = np.arange(n)
+    lin = tk.information_gate(y, q, P, g, reps=300, seed=seed + 1, price_df=None)["p_family"] < 0.05
+    spl = tk.information_gate(y, q, P, g, reps=300, seed=seed + 1)["p_family"] < 0.05
+    st = (tk.information_gate(y, q, P, g, reps=300, seed=seed + 1, strata=strata)["p_family"] < 0.05
+          if strata is not None else None)
+    return lin, spl, st
+
+
+def exp11_gate_robustness(reps, seed=11, processes=4):
+    from multiprocessing import Pool
+
+    rng = np.random.default_rng(seed)
+    out = {}
+    with Pool(processes) as pool:
+        for case in ("devig", "flb", "drift"):
+            for n in (2000, 10000):
+                o = pool.map(_gate_task, [(case, n, int(s)) for s in rng.integers(2 ** 31, size=reps)])
+                out[f"{case}_{n}"] = {"logit_linear": float(np.mean([a for a, _, _ in o])),
+                                      "spline": float(np.mean([b for _, b, _ in o])),
+                                      "spline_with_strata": (float(np.mean([c for _, _, c in o]))
+                                                             if o[0][2] is not None else None),
+                                      "replications": reps}
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
-    ap.add_argument("--only", default="1,2,34,34big,5,6,7,8,9,10")
+    ap.add_argument("--only", default="1,2,34,34big,5,6,7,8,9,10,11")
     ap.add_argument("--out", default="results.json")
     ap.add_argument("--merge", action="store_true", help="add to an existing --out file")
     a = ap.parse_args()
@@ -552,7 +656,7 @@ def main():
     results["true_roi_table"] = build_true_roi_table(n_total=500_000 if q else 10_000_000)
     print("true-ROI table done", round(time.time() - t0), "s", flush=True)
     if "7" in todo:
-        results["exp7_blend"] = exp7_blend(fits=3 if q else 20, power_reps=20 if q else 500)
+        results["exp7_blend"] = exp7_blend(fits=3 if q else 40, power_reps=20 if q else 500)
         print("exp7 done", round(time.time() - t0), "s", flush=True)
     if "8" in todo:
         results["exp8_gates_n2000"] = exp8_gates(3 if q else 200, 2000, 200 if q else 500)
@@ -564,6 +668,9 @@ def main():
     if "10" in todo:
         results["exp10_sizes"] = exp10_sizes(reps=20 if q else 800)
         print("exp10 done", round(time.time() - t0), "s", flush=True)
+    if "11" in todo:
+        results["exp11_gate_robustness"] = exp11_gate_robustness(reps=8 if q else 200)
+        print("exp11 done", round(time.time() - t0), "s", flush=True)
     if "1" in todo:
         results["exp1_sample_size"] = exp1_sample_size()
     if "2" in todo:

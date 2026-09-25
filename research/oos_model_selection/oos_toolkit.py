@@ -331,28 +331,49 @@ def encompassing_test(y, p_market, p_model, groups):
             "p_joint": float(1 - stats.chi2.cdf(wald, 3))}
 
 
-def information_gate(y, p_market, P_models, groups=None, reps=2000, seed=None,
-                     adjust_price_bias=True, alpha=0.05):
-    """Family-wise test: does ANY of the K candidates carry information beyond
-    the price? This is the multiple-testing-controlled version of the
-    encompassing test, and much more powerful than testing P&L.
+def _price_basis(lq, price_df, strata):
+    """Columns that model the price's own calibration: a natural cubic spline
+    in logit(q) with price_df columns (it spans the constant), one separate
+    curve per stratum. price_df=None gives (1, logit q)."""
+    if price_df is None:
+        X = np.column_stack([np.ones_like(lq), lq])
+    else:
+        from patsy import dmatrix
 
-    For model k, d_k = logit(p_k) - logit(q). The score for c = 0 in
-    logit P(y) = a + b*logit(q) + c*d_k is s_k = sum_g (y_g - q~_g) * d~_gk:
-    * q~ = the price recalibrated by (a, b) (logistic fit), so a
-      favourite-longshot bias in the price is not read as information;
-    * d~_k = d_k minus its q~(1-q~)-weighted projection on (1, logit q), the
-      Neyman-orthogonal score, which absorbs the estimation of (a, b).
-    adjust_price_bias=False uses the raw q and d_k instead: valid only if the
-    de-vigged price is exactly calibrated (test_toolkit.py shows it breaks
-    when the price is biased and the models lean on logit q).
-    Rows are summed within `groups` (gameid or series id) before testing. The
-    max of the studentized scores over all K models is compared with a Gaussian
-    multiplier bootstrap (one multiplier per group, shared by all models, which
-    keeps their correlation). Models with t above the critical value are
-    significant with family-wise error control (single-step max-T).
-    Returns p_family, per-model t, the critical value and the significant mask.
+        X = np.asarray(dmatrix(f"cr(x, df={price_df}) - 1", {"x": lq}))
+    if strata is not None:
+        _, s = np.unique(np.asarray(strata), return_inverse=True)
+        X = (X[:, :, None] * np.eye(s.max() + 1)[s][:, None, :]).reshape(len(lq), -1)
+    return X
+
+
+def information_gate(y, p_market, P_models, groups, reps=2000, seed=None, alpha=0.05,
+                     price_df=6, strata=None):
+    """Family-wise test: does ANY of the K candidates carry information beyond
+    the price? The multiple-testing-controlled version of the encompassing test,
+    and much more powerful than testing P&L.
+
+    For model k, d_k = logit(p_k) - logit(q); the statistic is the score for
+    c = 0 in  logit P(y) = f(q) + c*d_k:  s_k = sum_g (y_g - q~_g) * d~_gk.
+    * f is the price's own calibration curve, fitted by logistic regression: a
+      natural cubic spline in logit(q) with `price_df` columns, one curve per
+      stratum (e.g. season x checkpoint) if `strata` is given; q~ is the fit.
+      A favourite-longshot bias, or a de-vig that does not match the book's
+      margin, is absorbed here instead of being read as information.
+    * d~_k is d_k minus its q~(1-q~)-weighted projection on the same columns
+      (Neyman-orthogonal score), which absorbs the estimation of f.
+    price_df=None uses (1, logit q) only: an independent review measured 9-36%
+    false positives with it under a nonlinear favourite-longshot bias or a
+    mismatched de-vig, and 24-40% under calibration drift between seasons (no
+    strata); a spline with strata brought them to ~1-8% (EXP-11).
+    `groups` (gameid, or series id) is required: rows of a group are summed
+    first; stacking 15:00 and 20:00 rows without it gave 16.5% false positives.
+    Gaussian multiplier bootstrap of the max studentized score (one multiplier
+    per group, shared by all models). Single-step max-T adjusted p-values:
+    `significant` controls the family-wise error; p_family = min(p_adjusted).
     """
+    import statsmodels.api as sm
+
     y = np.asarray(y, float)
     q = np.clip(np.asarray(p_market, float), 1e-9, 1 - 1e-9)
     P = np.clip(np.asarray(P_models, float), 1e-9, 1 - 1e-9)
@@ -360,31 +381,47 @@ def information_gate(y, p_market, P_models, groups=None, reps=2000, seed=None,
         P = P[:, None]
     lq = np.log(q / (1 - q))
     D = np.log(P / (1 - P)) - lq[:, None]
-    qt = q
-    if adjust_price_bias:
-        import statsmodels.api as sm
-
-        X = np.column_stack([np.ones_like(lq), lq])
-        qt = sm.Logit(y, X).fit(disp=0).predict(X)
-        XtW = X.T * (qt * (1 - qt))
-        D = D - X @ np.linalg.solve(XtW @ X, XtW @ D)
-    E = (y - qt)[:, None] * D
-    if groups is not None:
-        E = aggregate_by_game(E, groups)
+    X = _price_basis(lq, price_df, strata)
+    qt = sm.Logit(y, X).fit(disp=0, method="newton", maxiter=100).predict(X)
+    XtW = X.T * (qt * (1 - qt))
+    D = D - X @ np.linalg.lstsq(XtW @ X, XtW @ D, rcond=None)[0]
+    E = aggregate_by_game((y - qt)[:, None] * D, groups)
     den = np.sqrt((E ** 2).sum(0))
     den = np.where(den > 1e-12, den, np.inf)
     t = E.sum(0) / den
     xi = np.random.default_rng(seed).standard_normal((reps, E.shape[0]))
-    mx = ((xi @ E) / den).max(1)
-    crit = float(np.quantile(mx, 1 - alpha))
-    return {"p_family": float((mx >= t.max()).mean()), "t": t, "crit": crit,
-            "significant": t > crit, "best": int(t.argmax())}
+    mx = np.sort(((xi @ E) / den).max(1))
+    p_adj = 1.0 - np.searchsorted(mx, t, side="left") / reps
+    return {"p_family": float(p_adj.min()), "p_adjusted": p_adj, "t": t,
+            "significant": p_adj < alpha, "best": int(t.argmax())}
+
+
+def price_calibration_test(y, p_market, groups, price_df=6, strata=None):
+    """Is the de-vigged price itself miscalibrated? Wald test, SEs clustered by
+    `groups`, of theta = 0 in  logit P(y) = logit(q) + basis(q) @ theta  (same
+    flexible basis as information_gate). If it rejects, the recalibrated price
+    is an edge candidate on its own, with no model at all.
+    Returns the p-value and the recalibrated probability."""
+    import statsmodels.api as sm
+
+    y = np.asarray(y, float)
+    q = np.clip(np.asarray(p_market, float), 1e-9, 1 - 1e-9)
+    lq = np.log(q / (1 - q))
+    X = _price_basis(lq, price_df, strata)
+    _, g = np.unique(np.asarray(groups), return_inverse=True)
+    fit = sm.GLM(y, X, family=sm.families.Binomial(), offset=lq).fit(
+        cov_type="cluster", cov_kwds={"groups": g})
+    th, V = np.asarray(fit.params), np.asarray(fit.cov_params())
+    wald = float(th @ np.linalg.pinv(V) @ th)
+    return {"p_value": float(1 - stats.chi2.cdf(wald, np.linalg.matrix_rank(V))),
+            "q_recalibrated": fit.predict(X, offset=lq)}
 
 
 def fit_blend(y, p_market, p_model):
     """Benter-style blend fitted on PAST games only:
     logit P(y) = a + b*logit(q) + c*(logit(p) - logit(q)). Returns (a, b, c).
-    Bet with blend_prob(...) on later games, never with the raw model."""
+    Bet with blend_prob(...) on later games. It is a fitted model too: with a
+    few thousand games its coefficients are noisy (EXP-7)."""
     import statsmodels.api as sm
 
     q = np.clip(np.asarray(p_market, float), 1e-9, 1 - 1e-9)
@@ -402,40 +439,40 @@ def blend_prob(p_market, p_model, coef):
     return 1.0 / (1.0 + np.exp(-(a + b * lq + c * (lp - lq))))
 
 
-def sprt_break_even(won, p_claimed, odds, alpha=0.05, beta=0.05, groups=None):
-    """Anytime-valid live monitoring (Wald's SPRT; validity by Ville's inequality).
+def pnl_eprocess(game_returns, alpha=0.05, lambdas=(0.005, 0.01, 0.02, 0.04, 0.08)):
+    """Anytime-valid live monitoring of REALISED profit (testing by betting,
+    Shafer 2021 / Ramdas et al. 2023; validity from Ville's inequality).
 
-    For bets in time order, multiply p/b if the backed side won and
-    (1-p)/(1-b) if it lost, with b = 1/odds (break-even probability) and p the
-    win probability you claimed BEFORE the result (use p >= b; that is what an
-    EV rule bets on anyway). If no bet has positive EV (true win prob <= b),
-    the running product is a nonnegative supermartingale, so it EVER reaches
-    1/alpha with probability <= alpha, however often you look. If your claims
-    are exactly right, its inverse is a martingale and it EVER falls to beta
-    with probability <= beta. Decision: 'scale' at >= 1/alpha, 'kill' at
-    <= beta, else 'continue'. Returns (log_lr path, decision, step index).
-    A shrunk claim (between b and p) is still valid and more robust.
+    game_returns: profit of each game you bet, in time order, in units of ONE
+    fixed reference stake, at the odds you actually obtained, with all bets on
+    the same game summed (aggregate_by_game).
+    * up = mean over lambdas of prod(1 + lambda*r). If no bet has positive
+      expected value at the odds obtained, this is a nonnegative supermartingale
+      (sums of same-game bets included, even when the 20:00 bet depends on the
+      20:00 state, because expectations add), so P(up EVER >= 1/alpha) <= alpha
+      however often you look: 'scale'.
+    * down = mean over lambdas of prod(1 - lambda*r): the same guarantee when no
+      bet has negative expected value: 'kill' when down >= 1/alpha.
+    It uses no claimed probabilities, so overconfident claims and slippage
+    cannot fool it; the cost is less power than a test that trusts claims.
+    Returns log paths, the decision and the 1-based game index.
+    """
+    from scipy.special import logsumexp
 
-    groups: pass the gameid (or series id) when you bet one game more than
-    once (15:00 and 20:00). Those bets settle on the same outcome, so their
-    factors must be AVERAGED, not multiplied: for two bets on one side at the
-    break-even price, E[f1*f2] = 1 + (p-b)^2 / (b(1-b)) > 1, which breaks the
-    guarantee. An average of such factors keeps E <= 1 (scale side) and,
-    because 1/mean(f) <= mean(1/f), the kill-side guarantee too. The path
-    then has one step per game, in order of first bet."""
-    b = 1.0 / np.asarray(odds, float)
-    p = np.clip(np.asarray(p_claimed, float), 1e-9, 1 - 1e-9)
-    won = np.asarray(won, bool)
-    factor = np.where(won, p / b, (1 - p) / (1 - b))
-    if groups is not None:
-        factor = aggregate_by_game(factor, groups) / aggregate_by_game(np.ones_like(factor), groups)
-    log_lr = np.cumsum(np.log(factor))
-    up, down = np.log(1.0 / alpha), np.log(beta)
-    hit = np.flatnonzero((log_lr >= up) | (log_lr <= down))
-    if hit.size == 0:
-        return log_lr, "continue", None
-    i = int(hit[0])
-    return log_lr, ("scale" if log_lr[i] >= up else "kill"), i
+    r = np.asarray(game_returns, float)
+    lam = np.asarray(lambdas, float)
+    lr = np.outer(r, lam)
+    if (np.abs(lr) >= 1).any():
+        raise ValueError("|lambda * game return| must stay below 1: lower the lambdas")
+    log_up = logsumexp(np.cumsum(np.log1p(lr), axis=0), axis=1) - np.log(lam.size)
+    log_down = logsumexp(np.cumsum(np.log1p(-lr), axis=0), axis=1) - np.log(lam.size)
+    thr = np.log(1.0 / alpha)
+    hits = np.flatnonzero((log_up >= thr) | (log_down >= thr))
+    if hits.size == 0:
+        return {"log_up": log_up, "log_down": log_down, "decision": "continue", "game": None}
+    i = int(hits[0])
+    return {"log_up": log_up, "log_down": log_down,
+            "decision": "scale" if log_up[i] >= thr else "kill", "game": i + 1}
 
 
 # --------------------------------------------------------------------------- #

@@ -200,78 +200,154 @@ ok &= check("recalibration edge shows in the joint test, not in c", enc["p_joint
             f"b={enc['b_market']:.2f} c={enc['c_model']:.2f} p_c={enc['p_one_sided']:.2f} p_joint={enc['p_joint']:.1e}")
 
 # --------------------------------------------------------------------------- #
-# family information gate, Benter blend
+# family information gate, price calibration test, Benter blend
 # --------------------------------------------------------------------------- #
-def info_world(n, K, info_idx=(), bias=1.0, tilt=0.0):
-    """bias: truth = bias * logit(q). tilt: models lean on logit(q) with no private info."""
+expit = lambda x: 1 / (1 + np.exp(-x))
+logit = lambda p: np.log(p / (1 - p))
+
+
+def info_world(n, K, info_idx=()):
     lq = rng.normal(0, 1.2, n)
     e = rng.normal(0, 0.5, n)
-    yy = (rng.random(n) < 1 / (1 + np.exp(-(bias * lq + e)))).astype(float)
-    d = 0.3 * rng.normal(size=(n, 1)) + 0.1 * rng.normal(size=(n, K)) + tilt * lq[:, None]
+    yy = (rng.random(n) < expit(lq + e)).astype(float)
+    d = 0.3 * rng.normal(size=(n, 1)) + 0.1 * rng.normal(size=(n, K))
     for i in info_idx:
         d[:, i] += 0.5 * e
-    return yy, 1 / (1 + np.exp(-lq)), 1 / (1 + np.exp(-(lq[:, None] + d)))
+    return yy, expit(lq), expit(lq[:, None] + d)
 
 
-rej = np.mean([tk.information_gate(*info_world(2000, 50), reps=500, seed=s)["p_family"] < 0.05
+def flb_world(n, K=100):
+    """Nonlinear favourite-longshot bias in the price; models are nonlinear
+    functions of q plus noise (no private information)."""
+    z = np.clip(rng.normal(0, 2.2, n), -3.6, 3.6)
+    q = expit(z)
+    yy = (rng.random(n) < expit(z * (1 + 0.06 * np.abs(z)))).astype(float)
+    base = np.clip(0.5 + np.linspace(0.85, 1.1, K)[None, :] * (q[:, None] - 0.5), 0.005, 0.995)
+    P = expit(logit(base) + 0.15 * rng.normal(size=(n, 1)) + 0.05 * rng.normal(size=(n, K)))
+    return yy, q, P
+
+
+def drift_world(n, K=100):
+    """Two seasons with opposite price biases; models lean on each season's bias."""
+    lq = rng.normal(0, 1.5, n)
+    season = (np.arange(n) >= n // 2).astype(int)
+    bt = np.where(season == 0, 1.2, 0.85)
+    yy = (rng.random(n) < expit(bt * lq)).astype(float)
+    P = expit(lq[:, None] * (1 + 0.1 * (bt - 1))[:, None] + 0.1 * rng.normal(size=(n, 1)) + 0.03 * rng.normal(size=(n, K)))
+    return yy, expit(lq), P, season
+
+
+gid2 = np.arange(2000)
+rej = np.mean([tk.information_gate(*info_world(2000, 50), gid2, reps=500, seed=s)["p_family"] < 0.05
                for s in range(300)])
 ok &= check("information gate size, 50 models without information", 0.02 < rej < 0.08, f"{rej:.3f}")
-rej_raw = np.mean([tk.information_gate(*info_world(2000, 50, bias=1.3, tilt=0.3), reps=500, seed=s,
-                                       adjust_price_bias=False)["p_family"] < 0.05 for s in range(100)])
-rej_orth = np.mean([tk.information_gate(*info_world(2000, 50, bias=1.3, tilt=0.3), reps=500, seed=s)
-                    ["p_family"] < 0.05 for s in range(200)])
-ok &= check("biased price: orthogonalised gate keeps its size, raw scores do not",
-            rej_orth < 0.09 and rej_raw > 0.5, f"orthogonal={rej_orth:.3f} raw={rej_raw:.3f}")
-g_out = tk.information_gate(*info_world(3000, 50, info_idx=(17,)), reps=1000, seed=1)
+
+gid5 = np.arange(5000)
+lin, spl = [], []
+for s in range(120):
+    yy, q, P = flb_world(5000)
+    lin.append(tk.information_gate(yy, q, P, gid5, reps=300, seed=s, price_df=None)["p_family"] < 0.05)
+    spl.append(tk.information_gate(yy, q, P, gid5, reps=300, seed=s)["p_family"] < 0.05)
+ok &= check("nonlinear longshot bias: spline calibration keeps the size, logit-linear does not",
+            np.mean(spl) < 0.09 and np.mean(lin) > np.mean(spl) + 0.05,
+            f"logit-linear={np.mean(lin):.3f} spline={np.mean(spl):.3f}")
+
+pooled, strat = [], []
+for s in range(120):
+    yy, q, P, season = drift_world(5000)
+    pooled.append(tk.information_gate(yy, q, P, gid5, reps=300, seed=s)["p_family"] < 0.05)
+    strat.append(tk.information_gate(yy, q, P, gid5, reps=300, seed=s, strata=season)["p_family"] < 0.05)
+ok &= check("calibration drift between seasons: strata keep the size", np.mean(strat) < 0.09 and np.mean(pooled) > 0.15,
+            f"pooled={np.mean(pooled):.3f} per-season={np.mean(strat):.3f}")
+
+g_out = tk.information_gate(*info_world(3000, 50, info_idx=(17,)), np.arange(3000), reps=1000, seed=1)
 ok &= check("information gate finds the informative model", g_out["p_family"] < 0.01 and g_out["best"] == 17
-            and g_out["significant"].sum() <= 3, f"p={g_out['p_family']:.3f} best={g_out['best']} n_sig={g_out['significant'].sum()}")
+            and g_out["significant"].sum() <= 3 and g_out["p_family"] == g_out["p_adjusted"].min(),
+            f"p={g_out['p_family']:.3f} best={g_out['best']} n_sig={g_out['significant'].sum()}")
+yy, q, P = info_world(2000, 20)
+stacked = tk.information_gate(np.r_[yy, yy], np.r_[q, q], np.r_[P, P], np.r_[gid2, gid2], reps=300, seed=3)
+single = tk.information_gate(yy, q, P, gid2, reps=300, seed=3)
+ok &= check("rows of one game are summed before testing", np.allclose(stacked["t"], single["t"]), "")
+
+def calibrated_world(n):
+    """y ~ Bernoulli(q) exactly. (In info_world the price ignores e, so P(y | q)
+    is attenuated, roughly expit(0.95 logit q): NOT calibrated.)"""
+    lq = rng.normal(0, 1.2, n)
+    return (rng.random(n) < expit(lq)).astype(float), expit(lq)
+
+
+cal_null = np.mean([tk.price_calibration_test(*calibrated_world(2000), gid2)["p_value"] < 0.05 for _ in range(200)])
+cal_flb = np.mean([tk.price_calibration_test(*flb_world(5000, 1)[:2], gid5)["p_value"] < 0.05 for _ in range(50)])
+ok &= check("price calibration test: ~5% on a calibrated price, detects a longshot bias",
+            0.02 < cal_null < 0.09 and cal_flb > 0.8, f"calibrated={cal_null:.3f} biased={cal_flb:.3f}")
 
 lq = rng.normal(0, 1.2, 50000)
 e = rng.normal(0, 0.5, 50000)
-yy = (rng.random(50000) < 1 / (1 + np.exp(-(lq + e)))).astype(float)
-pm = 1 / (1 + np.exp(-(lq + e + rng.normal(0, 0.5, 50000))))      # informative but noisy
-coef = tk.fit_blend(yy, 1 / (1 + np.exp(-lq)), pm)
+yy = (rng.random(50000) < expit(lq + e)).astype(float)
+pm = expit(lq + e + rng.normal(0, 0.5, 50000))      # informative but noisy
+coef = tk.fit_blend(yy, expit(lq), pm)
 ok &= check("blend recovers a~0, b~1, 0<c<1 (shrinks a noisy model)", abs(coef[0]) < 0.05 and abs(coef[1] - 1) < 0.05
             and 0.2 < coef[2] < 0.8, np.round(coef, 3))
 
 # --------------------------------------------------------------------------- #
-# live monitoring checked after EVERY bet
+# live monitoring on realised P&L, checked after EVERY game
 # --------------------------------------------------------------------------- #
-n_bets, paths = 3000, 2000
-odds_l = rng.uniform(1.5, 3.5, (paths, n_bets))
-b_l = 1 / odds_l
-claim = np.minimum(b_l * 1.05, 0.99)                    # claims a +5% edge on every bet
-won0 = rng.random((paths, n_bets)) < b_l               # H0: break-even (no edge)
-won1 = rng.random((paths, n_bets)) < claim             # H1: the claim is right
-dec0 = [tk.sprt_break_even(won0[i], claim[i], odds_l[i])[1] for i in range(paths)]
-dec1 = [tk.sprt_break_even(won1[i], claim[i], odds_l[i])[1] for i in range(paths)]
-prof0 = np.where(won0, odds_l - 1, -1.0)
-k = np.arange(1, n_bets + 1)
-run_t = np.cumsum(prof0, 1) / k / (np.sqrt(np.maximum(np.cumsum(prof0 ** 2, 1) / k - (np.cumsum(prof0, 1) / k) ** 2, 1e-12)) / np.sqrt(k))
-naive_fa = np.mean((run_t[:, 29:] > 1.645).any(1))
-ok &= check("sprt: false scale-up <= 5% when checked after every bet", np.mean(np.array(dec0) == "scale") <= 0.055,
-            f"false scale-up={np.mean(np.array(dec0) == 'scale'):.3f}; naive t>1.645 checked after every bet={naive_fa:.3f}")
-ok &= check("sprt: false kill <= 5% when the claim is right", np.mean(np.array(dec1) == "kill") <= 0.055,
-            f"false kill={np.mean(np.array(dec1) == 'kill'):.3f}; scaled={np.mean(np.array(dec1) == 'scale'):.3f}")
+def eproc_rates(returns):
+    d = np.array([tk.pnl_eprocess(r)["decision"] for r in returns])
+    return (d == "scale").mean(), (d == "kill").mean()
 
-# two bets on the SAME game (15:00 and 20:00, same side) settle on one outcome:
-# multiplying their factors breaks the guarantee, averaging them keeps it
-n_games = 3000
-odds_g = rng.uniform(1.5, 3.5, (paths, n_games))
-claim_g = np.minimum(1.05 / odds_g, 0.99)
-won_g = rng.random((paths, n_games)) < 1 / odds_g            # break-even truth
-two = lambda a: np.repeat(a, 2, axis=1)                      # the same bet twice per game
-gid = np.repeat(np.arange(n_games), 2)
-mult = np.mean([tk.sprt_break_even(two(won_g)[i], two(claim_g)[i], two(odds_g)[i])[1] == "scale" for i in range(paths)])
-avg = np.mean([tk.sprt_break_even(two(won_g)[i], two(claim_g)[i], two(odds_g)[i], groups=gid)[1] == "scale"
-               for i in range(paths)])
-ok &= check("sprt with two bets per game: average factors (groups=gameid), never multiply", avg <= 0.055 and mult > avg,
-            f"multiplied={mult:.3f} averaged={avg:.3f}")
+
+paths, n_bets = 1000, 3000
+odds_l = rng.uniform(1.5, 3.5, (paths, n_bets))
+
+
+def bets(true_roi):
+    won = rng.random((paths, n_bets)) < np.clip((1 + true_roi) / odds_l, 0, 1)
+    return np.where(won, odds_l - 1, -1.0)
+
+
+sc0, _ = eproc_rates(bets(0.0))
+sc_real, kill_real = eproc_rates(bets(0.05))
+prof0 = bets(0.0)
+k = np.arange(1, n_bets + 1)
+mean_ = np.cumsum(prof0, 1) / k
+run_t = mean_ / (np.sqrt(np.maximum(np.cumsum(prof0 ** 2, 1) / k - mean_ ** 2, 1e-12)) / np.sqrt(k))
+naive_fa = np.mean((run_t[:, 29:] > 1.645).any(1))
+ok &= check("P&L e-process: false scale-up <= 5% at break-even, checked after every bet", sc0 <= 0.05,
+            f"false scale-up={sc0:.3f}; naive t>1.645 checked after every bet={naive_fa:.3f}")
+ok &= check("P&L e-process: false kill <= 5% with a real +5% edge on every bet", kill_real <= 0.05,
+            f"false kill={kill_real:.3f}; scaled up={sc_real:.3f}")
+mixed = np.where(rng.random((paths, n_bets)) < 0.4, 0.05, -0.05)              # overall ROI -1%
+won_m = rng.random((paths, n_bets)) < (1 + mixed) / odds_l
+sc_mixed, _ = eproc_rates(np.where(won_m, odds_l - 1, -1.0))
+slip = odds_l * (1 - rng.uniform(0, 0.08, (paths, n_bets)))                  # right at requested odds, filled worse
+won_s = rng.random((paths, n_bets)) < 1.02 / odds_l
+sc_slip, _ = eproc_rates(np.where(won_s, slip - 1, -1.0))
+ok &= check("P&L e-process does not scale up losing mixes or slippage (no formal guarantee here)",
+            sc_mixed <= 0.05 and sc_slip <= 0.05, f"mixed={sc_mixed:.3f} slippage={sc_slip:.3f}")
+
+# same game re-bet at 20:00 ONLY when the price moved against the 15:00 bet ("chasing"),
+# zero margin and no information: summing the two bets per game keeps the guarantee
+import simulate as S
+
+chase = []
+for i in range(400):
+    g = S.draw_games(3000, rng, margin=0.0)
+    side_a = rng.random(3000) < 0.5
+    q15s = np.where(side_a, g["q15"], 1 - g["q15"])
+    q20s = np.where(side_a, g["q20"], 1 - g["q20"])
+    ys = np.where(side_a, g["y"], 1 - g["y"])
+    ok15 = q15s >= 0.2
+    r15 = np.where(ok15, ys / q15s - 1, 0.0)
+    again = ok15 & (q20s < q15s) & (q20s >= 0.2)
+    r20 = np.where(again, ys / q20s - 1, 0.0)
+    chase.append(tk.pnl_eprocess((r15 + r20)[ok15])["decision"] == "scale")
+ok &= check("P&L e-process: chasing at 20:00 (bets summed per game) keeps false scale-ups <= 5%",
+            np.mean(chase) <= 0.05, f"{np.mean(chase):.3f}")
 
 # --------------------------------------------------------------------------- #
 # markout: unbiased when the later market has caught up, blind otherwise
 # --------------------------------------------------------------------------- #
-import simulate as S
 
 for case, VB, VBp, want in (("catch-up", 0.02, 0.0, "zero"), ("persistent", 0.0, 0.02, "positive")):
     g = S.draw_games(400_000, rng, VB=VB, VBp=VBp)
