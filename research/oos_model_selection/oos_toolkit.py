@@ -1,0 +1,302 @@
+"""
+Reference implementations of the model-selection statistics discussed in README.md.
+
+Conventions (read before using on real data)
+--------------------------------------------
+* One row = one GAME (gameid unique), rows sorted by game start time.
+  If a model bets at 15:00 AND 20:00 of the same game, SUM both bets into the
+  game row first (see `aggregate_by_game`). Then no fold / block / bootstrap
+  draw can ever split a game.
+* R[g, k] = profit of model k in game g, in units staked (0 if no bet).
+* Every input must already be OUT-OF-SAMPLE (walk-forward) predictions/returns.
+  Nothing in this file can detect a model that was fitted on the rows it scores.
+"""
+from itertools import combinations
+
+import numpy as np
+from scipy import stats
+
+EULER_GAMMA = 0.5772156649015329
+
+
+# --------------------------------------------------------------------------- #
+# Odds / returns
+# --------------------------------------------------------------------------- #
+def devig_multiplicative(odds_a, odds_b):
+    """Fair probability of side A with the proportional (multiplicative) method.
+    Other methods (Shin, power, odds-ratio) differ mostly at long odds."""
+    ia, ib = 1.0 / np.asarray(odds_a, float), 1.0 / np.asarray(odds_b, float)
+    return ia / (ia + ib)
+
+
+def flat_bet_returns(p_model, odds_a, odds_b, y, min_ev=0.0):
+    """Unit stake on the side whose EV (at the offered odds) exceeds `min_ev`.
+
+    p_model: (n,) or (n, K) model probability that side A wins.
+    odds_a, odds_b, y: (n,) or broadcastable; y = 1 if side A won.
+    Returns (profit, bet_mask). With any overround at most one side has EV > 0.
+    """
+    ev_a = p_model * odds_a - 1.0
+    ev_b = (1.0 - p_model) * odds_b - 1.0
+    bet_a = (ev_a > min_ev) & (ev_a >= ev_b)
+    bet_b = (ev_b > min_ev) & (ev_b > ev_a)
+    profit = np.where(bet_a, y * odds_a - 1.0, 0.0)
+    profit = np.where(bet_b, (1 - y) * odds_b - 1.0, profit)
+    return profit, bet_a | bet_b
+
+
+def aggregate_by_game(values, gameid):
+    """Sum row-level values (n,) or (n, K) into one row per game, keeping the
+    order of first appearance (so time order is preserved if rows were sorted)."""
+    gameid = np.asarray(gameid)
+    _, first, inv = np.unique(gameid, return_index=True, return_inverse=True)
+    order = np.argsort(first)                 # games in order of first appearance
+    rank = np.empty_like(order)
+    rank[order] = np.arange(order.size)
+    values = np.asarray(values, float)
+    out = np.zeros((order.size,) + values.shape[1:])
+    np.add.at(out, rank[inv], values)
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Sharpe-ratio family (Bailey & López de Prado)
+# --------------------------------------------------------------------------- #
+def sharpe(x, axis=0):
+    """Per-period (per-game) Sharpe ratio; 0 when the series has no variance
+    (e.g. a model that never bets)."""
+    x = np.asarray(x, float)
+    m, s = x.mean(axis), x.std(axis, ddof=1)
+    return np.divide(m, s, out=np.zeros_like(m, dtype=float), where=s > 0)
+
+
+def psr(x, sr_benchmark=0.0):
+    """Probabilistic Sharpe Ratio: P(true SR > sr_benchmark) given one track
+    record x (per-game returns). Uses sample skewness and RAW kurtosis."""
+    x = np.asarray(x, float)
+    T = x.size
+    sr = float(sharpe(x))
+    g3 = stats.skew(x)
+    g4 = stats.kurtosis(x, fisher=False)
+    denom = np.sqrt(max(1.0 - g3 * sr + (g4 - 1.0) / 4.0 * sr ** 2, 1e-12))
+    return float(stats.norm.cdf((sr - sr_benchmark) * np.sqrt(T - 1) / denom))
+
+
+def expected_max_sr(n_trials, var_sr):
+    """Expected maximum of n_trials SR estimates whose true SR is 0
+    (approximation used by the Deflated Sharpe Ratio)."""
+    if n_trials <= 1:
+        return 0.0
+    z1 = stats.norm.ppf(1.0 - 1.0 / n_trials)
+    z2 = stats.norm.ppf(1.0 - 1.0 / (n_trials * np.e))
+    return float(np.sqrt(var_sr) * ((1 - EULER_GAMMA) * z1 + EULER_GAMMA * z2))
+
+
+def deflated_sharpe(x_selected, sr_all_trials, n_trials=None):
+    """DSR = PSR against the expected max SR of all trials.
+    n_trials defaults to the number of SRs given; pass an effective N when
+    trials are correlated. Returns (dsr, sr0)."""
+    sr_all = np.asarray(sr_all_trials, float)
+    n = sr_all.size if n_trials is None else n_trials
+    sr0 = expected_max_sr(n, sr_all.var(ddof=1))
+    return psr(x_selected, sr0), sr0
+
+
+def implied_independent_trials(R):
+    """Bailey & López de Prado (2014), Appendix A.3, Eq. 9:
+    N_hat = rho + (1 - rho) * M, rho = average off-diagonal correlation of the
+    M trials' per-game returns. The paper itself calls it an interpolation and
+    warns that correlation only captures linear dependence."""
+    R = np.asarray(R, float)
+    R = R[:, R.std(0) > 0]
+    C = np.corrcoef(R, rowvar=False)
+    M = C.shape[0]
+    rho = (C.sum() - M) / (M * (M - 1))
+    return float(rho + (1.0 - rho) * M)
+
+
+# --------------------------------------------------------------------------- #
+# CSCV / Probability of Backtest Overfitting
+# --------------------------------------------------------------------------- #
+def pbo_cscv(R, n_blocks=16, metric="sharpe"):
+    """Bailey, Borwein, López de Prado & Zhu. R: (T games x N models), time order.
+
+    Rows are cut into `n_blocks` contiguous blocks (a game is one row, so a
+    game is never split). For every C(S, S/2) choice of IS blocks, the IS-best
+    model is ranked inside the complementary OOS blocks.
+
+    CAUTION: half of the splits train on games that come AFTER the test games.
+    CSCV measures how stable the SELECTION is, not whether the edge survives
+    the passage of time; pair it with a walk-forward holdout.
+    """
+    R = np.asarray(R, float)
+    T, N = R.shape
+    if n_blocks % 2:
+        raise ValueError("n_blocks must be even")
+    edges = np.linspace(0, T, n_blocks + 1).astype(int)
+    bounds = list(zip(edges[:-1], edges[1:]))
+    s1 = np.array([R[a:b].sum(0) for a, b in bounds])          # (S, N)
+    s2 = np.array([(R[a:b] ** 2).sum(0) for a, b in bounds])   # (S, N)
+    cnt = np.diff(edges).astype(float)                          # (S,)
+
+    combos = np.array(list(combinations(range(n_blocks), n_blocks // 2)))
+    ind = np.zeros((len(combos), n_blocks))
+    ind[np.arange(len(combos))[:, None], combos] = 1.0
+
+    def perf(i):
+        n = (i @ cnt)[:, None]
+        m1 = (i @ s1) / n
+        if metric == "mean":
+            return m1
+        var = ((i @ s2) / n - m1 ** 2) * n / (n - 1)
+        sd = np.sqrt(np.maximum(var, 0.0))
+        return np.divide(m1, sd, out=np.zeros_like(m1), where=sd > 1e-12)
+
+    is_p, oos_p = perf(ind), perf(1.0 - ind)
+    rows = np.arange(len(combos))
+    best = is_p.argmax(1)
+    oos_best = oos_p[rows, best]
+    rank = stats.rankdata(oos_p, axis=1)[rows, best]    # 1 = worst ... N = best
+    w = rank / (N + 1.0)
+    lam = np.log(w / (1.0 - w))
+    slope, intercept = np.polyfit(is_p[rows, best], oos_best, 1)
+    return {
+        "pbo": float((lam <= 0).mean()),
+        "prob_oos_loss": float((oos_best < 0).mean()),
+        "median_oos_of_is_best": float(np.median(oos_best)),
+        "median_is_of_is_best": float(np.median(is_p[rows, best])),
+        "degradation_slope": float(slope),
+        "degradation_intercept": float(intercept),
+        "n_splits": len(combos),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Bootstrap-based multiple-testing procedures
+# mean_block=1 resamples games iid; use mean_block > 1 (games sorted by time)
+# when games on the same day / patch are dependent.
+# --------------------------------------------------------------------------- #
+def bootstrap_weights(n, B, rng, mean_block=1.0):
+    """(B x n) resampling counts over rows (= games).
+    mean_block <= 1: iid resampling of games.
+    mean_block  > 1: stationary bootstrap (Politis & Romano 1994)."""
+    if mean_block <= 1:
+        return rng.multinomial(n, np.full(n, 1.0 / n), size=B).astype(float)
+    idx = np.empty((B, n), dtype=np.int64)
+    idx[:, 0] = rng.integers(0, n, B)
+    jump = rng.random((B, n)) < 1.0 / mean_block
+    start = rng.integers(0, n, (B, n))
+    for t in range(1, n):
+        idx[:, t] = np.where(jump[:, t], start[:, t], (idx[:, t - 1] + 1) % n)
+    flat = (np.arange(B)[:, None] * n + idx).ravel()
+    return np.bincount(flat, minlength=B * n).reshape(B, n).astype(float)
+
+
+def spa_vs_no_bet(R, reps=1000, mean_block=1.0, seed=None):
+    """Hansen (2005) SPA (consistent p-value) and White (2000) Reality Check.
+
+    R[g, k] = profit per game. Benchmark = not betting (profit 0).
+    H0: no model has a positive expected profit. The max statistic is
+    bootstrapped jointly, so correlation between models is handled
+    automatically (no effective-N guess needed).
+    Checked against arch.bootstrap.SPA in test_toolkit.py; this version
+    exists because it is ~100x faster at 20k games (Monte Carlo needs it)."""
+    rng = np.random.default_rng(seed)
+    D = np.asarray(R, float)
+    n = D.shape[0]
+    W = bootstrap_weights(n, reps, rng, mean_block)
+    dbar = D.mean(0)
+    dstar = (W @ D) / n                                   # (reps, K) bootstrap means
+    omega = np.sqrt(n * ((dstar - dbar) ** 2).mean(0))    # sd of sqrt(n) * dbar
+    omega = np.where(omega > 1e-12, omega, np.inf)        # models that never bet
+    t = np.sqrt(n) * dbar / omega
+    # SPA: clearly bad models (t below -sqrt(2 log log n)) keep their own mean
+    mu = np.where(t <= -np.sqrt(2.0 * np.log(np.log(n))), dbar, 0.0)
+    z = np.sqrt(n) * (dstar - dbar + mu) / omega
+    p_spa = float((np.maximum(z.max(1), 0.0) >= max(t.max(), 0.0)).mean())
+    # RC: not studentized, every model recentred at zero
+    p_rc = float(((dstar - dbar).max(1) >= dbar.max()).mean())
+    return {"p_spa": p_spa, "p_rc": p_rc}
+
+
+def model_confidence_set(L, alpha=0.10, reps=1000, block_size=1, method="R", seed=None):
+    """Hansen, Lunde & Nason (2011) Model Confidence Set.
+
+    L[g, k] = LOSS of model k in game g (lower = better): -profit, or log loss.
+    Returns a boolean mask of the models that cannot be told apart from the
+    best one at level alpha. method="R" (range statistic) is the arch default;
+    method="max" is ~25x faster but has little power when ONE model dominates
+    many equal ones (see test_toolkit.py)."""
+    from arch.bootstrap import MCS
+
+    L = np.asarray(L, float)
+    mcs = MCS(L, size=alpha, reps=reps, block_size=block_size, method=method, seed=seed)
+    mcs.compute()
+    mask = np.zeros(L.shape[1], bool)
+    mask[np.asarray(list(mcs.included), dtype=int)] = True
+    return mask
+
+
+# --------------------------------------------------------------------------- #
+# Probability scoring against the market
+# --------------------------------------------------------------------------- #
+def log_loss(y, p, eps=1e-12):
+    p = np.clip(p, eps, 1 - eps)
+    return -(y * np.log(p) + (1 - y) * np.log(1 - p))
+
+
+def clustered_mean_test(d, groups):
+    """Mean of row-level d with a standard error clustered by `groups` (gameid).
+    Returns (mean, se, z)."""
+    d = np.asarray(d, float)
+    _, inv = np.unique(groups, return_inverse=True)
+    G = inv.max() + 1
+    resid_sum = np.bincount(inv, weights=d - d.mean(), minlength=G)
+    se = np.sqrt((resid_sum ** 2).sum() * G / (G - 1)) / d.size
+    return float(d.mean()), float(se), float(d.mean() / se)
+
+
+def logloss_vs_market(y, p_model, p_market, groups):
+    """Paired log-loss difference (model - market). Negative = model better.
+    One-sided p-value for 'model better than market'."""
+    mean, se, z = clustered_mean_test(log_loss(y, p_model) - log_loss(y, p_market), groups)
+    return {"delta_logloss": mean, "se": se, "z": z, "p_one_sided": float(stats.norm.cdf(z))}
+
+
+def encompassing_test(y, p_market, p_model, groups):
+    """Fair–Shiller-style encompassing regression on the logit scale:
+        logit P(y=1) = a + b*logit(p_market) + c*(logit(p_model) - logit(p_market))
+    c > 0 <=> the model carries information the market price does not.
+    Standard errors clustered by game. One-sided p-value for c > 0."""
+    import statsmodels.api as sm
+
+    lm = np.log(p_market / (1 - p_market))
+    lp = np.log(p_model / (1 - p_model))
+    X = sm.add_constant(np.column_stack([lm, lp - lm]))
+    fit = sm.Logit(y, X).fit(disp=0, cov_type="cluster", cov_kwds={"groups": groups})
+    c, se = fit.params[2], fit.bse[2]
+    return {"b_market": float(fit.params[1]), "c_model": float(c), "se_c": float(se),
+            "p_one_sided": float(1 - stats.norm.cdf(c / se))}
+
+
+# --------------------------------------------------------------------------- #
+# Live-betting substitute for CLV
+# --------------------------------------------------------------------------- #
+def markout(odds_taken, fair_prob_later):
+    """EV of a bet re-priced at a LATER fair (de-vigged) market probability of
+    the side you backed: odds_taken * q_later - 1. With q_later = closing
+    price this is the usual CLV-based EV. Unbiased for the realised EV only if
+    the later market has absorbed all the information you had at bet time."""
+    return np.asarray(odds_taken, float) * np.asarray(fair_prob_later, float) - 1.0
+
+
+# --------------------------------------------------------------------------- #
+# Sample size
+# --------------------------------------------------------------------------- #
+def bets_needed(edge, odds, z=2.0):
+    """Independent flat bets needed so that a true ROI `edge` at decimal `odds`
+    sits z standard errors from 0. Per-bet sd = odds * sqrt(p(1-p)),
+    p = (1 + edge) / odds."""
+    p = (1.0 + edge) / odds
+    sd = odds * np.sqrt(p * (1.0 - p))
+    return int(np.ceil((z * sd / edge) ** 2))

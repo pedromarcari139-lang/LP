@@ -1,0 +1,8 @@
+blue rows 33363, complete 28338, dropped games shorter than 20:00: 166, used 28170
+train games (2022): 10592, test games (2023-24): 17578
+at 15:00  accuracy=0.741  logloss=0.5141  mean p=0.532 vs blue winrate=0.530
+at 20:00  accuracy=0.796  logloss=0.4325  mean p=0.534 vs blue winrate=0.530
+E[q15(1-q15)]=0.1758  E[(q20-q15)^2]=0.0288  E[(y-q20)^2]=0.1407  (martingale => first ~ second + third: 0.1695)
+mean(q20-q15)=+0.0023 (martingale => ~0)
+variance ratio profit/markout (both sides, fair odds): 12.76
+same ratio, only games with 0.3<q15<0.7: 5.62

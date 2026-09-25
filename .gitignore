@@ -1,0 +1,3 @@
+__pycache__/
+*.pyc
+research/oos_model_selection/run.log
