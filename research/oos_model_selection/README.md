@@ -211,7 +211,20 @@ Each item is a way a live LoL backtest can look profitable without being so.
      erroneous long odds.
    * Check for stale prices (unchanged while the game changes), impossible overrounds and duplicated
      games.
-9. **Negative control [especulação as a rule, standard practice in spirit].**
+9. **The de-vig method moves your benchmark [confirmado: arithmetic].**
+   * With two outcomes, additive = Shin (per the `implied` R package docs); multiplicative differs.
+   * How much the favourite's fair probability changes between the two methods:
+
+     | Odds | Change |
+     |---|---|
+     | 1.87 / 1.95 | 0.05 pp |
+     | 1.30 / 3.50 | 1.26 pp |
+     | 1.10 / 7.00 | 1.89 pp |
+
+   * Against a 2–3% edge that is not small, and lopsided prices are common at 15:00.
+   * Choose the method by the walk-forward log loss of the de-vigged market on your own data, and fix
+     it in stage 0 [provável].
+10. **Negative control [especulação as a rule, standard practice in spirit].**
    * Permute the outcomes within (league, patch) blocks and rerun the full pipeline.
    * The edge must vanish (ROI ≈ −margin). If it does not, something leaks.
 
