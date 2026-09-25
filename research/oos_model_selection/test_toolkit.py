@@ -200,6 +200,61 @@ ok &= check("recalibration edge shows in the joint test, not in c", enc["p_joint
             f"b={enc['b_market']:.2f} c={enc['c_model']:.2f} p_c={enc['p_one_sided']:.2f} p_joint={enc['p_joint']:.1e}")
 
 # --------------------------------------------------------------------------- #
+# family information gate, Benter blend
+# --------------------------------------------------------------------------- #
+def info_world(n, K, info_idx=(), bias=1.0, tilt=0.0):
+    """bias: truth = bias * logit(q). tilt: models lean on logit(q) with no private info."""
+    lq = rng.normal(0, 1.2, n)
+    e = rng.normal(0, 0.5, n)
+    yy = (rng.random(n) < 1 / (1 + np.exp(-(bias * lq + e)))).astype(float)
+    d = 0.3 * rng.normal(size=(n, 1)) + 0.1 * rng.normal(size=(n, K)) + tilt * lq[:, None]
+    for i in info_idx:
+        d[:, i] += 0.5 * e
+    return yy, 1 / (1 + np.exp(-lq)), 1 / (1 + np.exp(-(lq[:, None] + d)))
+
+
+rej = np.mean([tk.information_gate(*info_world(2000, 50), reps=500, seed=s)["p_family"] < 0.05
+               for s in range(300)])
+ok &= check("information gate size, 50 models without information", 0.02 < rej < 0.08, f"{rej:.3f}")
+rej_raw = np.mean([tk.information_gate(*info_world(2000, 50, bias=1.3, tilt=0.3), reps=500, seed=s,
+                                       adjust_price_bias=False)["p_family"] < 0.05 for s in range(100)])
+rej_orth = np.mean([tk.information_gate(*info_world(2000, 50, bias=1.3, tilt=0.3), reps=500, seed=s)
+                    ["p_family"] < 0.05 for s in range(200)])
+ok &= check("biased price: orthogonalised gate keeps its size, raw scores do not",
+            rej_orth < 0.09 and rej_raw > 0.5, f"orthogonal={rej_orth:.3f} raw={rej_raw:.3f}")
+g_out = tk.information_gate(*info_world(3000, 50, info_idx=(17,)), reps=1000, seed=1)
+ok &= check("information gate finds the informative model", g_out["p_family"] < 0.01 and g_out["best"] == 17
+            and g_out["significant"].sum() <= 3, f"p={g_out['p_family']:.3f} best={g_out['best']} n_sig={g_out['significant'].sum()}")
+
+lq = rng.normal(0, 1.2, 50000)
+e = rng.normal(0, 0.5, 50000)
+yy = (rng.random(50000) < 1 / (1 + np.exp(-(lq + e)))).astype(float)
+pm = 1 / (1 + np.exp(-(lq + e + rng.normal(0, 0.5, 50000))))      # informative but noisy
+coef = tk.fit_blend(yy, 1 / (1 + np.exp(-lq)), pm)
+ok &= check("blend recovers a~0, b~1, 0<c<1 (shrinks a noisy model)", abs(coef[0]) < 0.05 and abs(coef[1] - 1) < 0.05
+            and 0.2 < coef[2] < 0.8, np.round(coef, 3))
+
+# --------------------------------------------------------------------------- #
+# live monitoring checked after EVERY bet
+# --------------------------------------------------------------------------- #
+n_bets, paths = 3000, 2000
+odds_l = rng.uniform(1.5, 3.5, (paths, n_bets))
+b_l = 1 / odds_l
+claim = np.minimum(b_l * 1.05, 0.99)                    # claims a +5% edge on every bet
+won0 = rng.random((paths, n_bets)) < b_l               # H0: break-even (no edge)
+won1 = rng.random((paths, n_bets)) < claim             # H1: the claim is right
+dec0 = [tk.sprt_break_even(won0[i], claim[i], odds_l[i])[1] for i in range(paths)]
+dec1 = [tk.sprt_break_even(won1[i], claim[i], odds_l[i])[1] for i in range(paths)]
+prof0 = np.where(won0, odds_l - 1, -1.0)
+k = np.arange(1, n_bets + 1)
+run_t = np.cumsum(prof0, 1) / k / (np.sqrt(np.maximum(np.cumsum(prof0 ** 2, 1) / k - (np.cumsum(prof0, 1) / k) ** 2, 1e-12)) / np.sqrt(k))
+naive_fa = np.mean((run_t[:, 29:] > 1.645).any(1))
+ok &= check("sprt: false scale-up <= 5% when checked after every bet", np.mean(np.array(dec0) == "scale") <= 0.055,
+            f"false scale-up={np.mean(np.array(dec0) == 'scale'):.3f}; naive t>1.645 checked after every bet={naive_fa:.3f}")
+ok &= check("sprt: false kill <= 5% when the claim is right", np.mean(np.array(dec1) == "kill") <= 0.055,
+            f"false kill={np.mean(np.array(dec1) == 'kill'):.3f}; scaled={np.mean(np.array(dec1) == 'scale'):.3f}")
+
+# --------------------------------------------------------------------------- #
 # markout: unbiased when the later market has caught up, blind otherwise
 # --------------------------------------------------------------------------- #
 import simulate as S

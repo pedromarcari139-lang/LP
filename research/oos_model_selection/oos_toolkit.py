@@ -330,6 +330,102 @@ def encompassing_test(y, p_market, p_model, groups):
             "p_joint": float(1 - stats.chi2.cdf(wald, 3))}
 
 
+def information_gate(y, p_market, P_models, groups=None, reps=2000, seed=None,
+                     adjust_price_bias=True, alpha=0.05):
+    """Family-wise test: does ANY of the K candidates carry information beyond
+    the price? This is the multiple-testing-controlled version of the
+    encompassing test, and much more powerful than testing P&L.
+
+    For model k, d_k = logit(p_k) - logit(q). The score for c = 0 in
+    logit P(y) = a + b*logit(q) + c*d_k is s_k = sum_g (y_g - q~_g) * d~_gk:
+    * q~ = the price recalibrated by (a, b) (logistic fit), so a
+      favourite-longshot bias in the price is not read as information;
+    * d~_k = d_k minus its q~(1-q~)-weighted projection on (1, logit q), the
+      Neyman-orthogonal score, which absorbs the estimation of (a, b).
+    adjust_price_bias=False uses the raw q and d_k instead: valid only if the
+    de-vigged price is exactly calibrated (test_toolkit.py shows it breaks
+    when the price is biased and the models lean on logit q).
+    Rows are summed within `groups` (gameid or series id) before testing. The
+    max of the studentized scores over all K models is compared with a Gaussian
+    multiplier bootstrap (one multiplier per group, shared by all models, which
+    keeps their correlation). Models with t above the critical value are
+    significant with family-wise error control (single-step max-T).
+    Returns p_family, per-model t, the critical value and the significant mask.
+    """
+    y = np.asarray(y, float)
+    q = np.clip(np.asarray(p_market, float), 1e-9, 1 - 1e-9)
+    P = np.clip(np.asarray(P_models, float), 1e-9, 1 - 1e-9)
+    if P.ndim == 1:
+        P = P[:, None]
+    lq = np.log(q / (1 - q))
+    D = np.log(P / (1 - P)) - lq[:, None]
+    qt = q
+    if adjust_price_bias:
+        import statsmodels.api as sm
+
+        X = np.column_stack([np.ones_like(lq), lq])
+        qt = sm.Logit(y, X).fit(disp=0).predict(X)
+        XtW = X.T * (qt * (1 - qt))
+        D = D - X @ np.linalg.solve(XtW @ X, XtW @ D)
+    E = (y - qt)[:, None] * D
+    if groups is not None:
+        E = aggregate_by_game(E, groups)
+    den = np.sqrt((E ** 2).sum(0))
+    den = np.where(den > 1e-12, den, np.inf)
+    t = E.sum(0) / den
+    xi = np.random.default_rng(seed).standard_normal((reps, E.shape[0]))
+    mx = ((xi @ E) / den).max(1)
+    crit = float(np.quantile(mx, 1 - alpha))
+    return {"p_family": float((mx >= t.max()).mean()), "t": t, "crit": crit,
+            "significant": t > crit, "best": int(t.argmax())}
+
+
+def fit_blend(y, p_market, p_model):
+    """Benter-style blend fitted on PAST games only:
+    logit P(y) = a + b*logit(q) + c*(logit(p) - logit(q)). Returns (a, b, c).
+    Bet with blend_prob(...) on later games, never with the raw model."""
+    import statsmodels.api as sm
+
+    q = np.clip(np.asarray(p_market, float), 1e-9, 1 - 1e-9)
+    p = np.clip(np.asarray(p_model, float), 1e-9, 1 - 1e-9)
+    lq, lp = np.log(q / (1 - q)), np.log(p / (1 - p))
+    X = sm.add_constant(np.column_stack([lq, lp - lq]), has_constant="add")
+    return tuple(float(v) for v in sm.Logit(np.asarray(y, float), X).fit(disp=0).params)
+
+
+def blend_prob(p_market, p_model, coef):
+    a, b, c = coef
+    q = np.clip(np.asarray(p_market, float), 1e-9, 1 - 1e-9)
+    p = np.clip(np.asarray(p_model, float), 1e-9, 1 - 1e-9)
+    lq, lp = np.log(q / (1 - q)), np.log(p / (1 - p))
+    return 1.0 / (1.0 + np.exp(-(a + b * lq + c * (lp - lq))))
+
+
+def sprt_break_even(won, p_claimed, odds, alpha=0.05, beta=0.05):
+    """Anytime-valid live monitoring (Wald's SPRT; validity by Ville's inequality).
+
+    For bets in time order, multiply p/b if the backed side won and
+    (1-p)/(1-b) if it lost, with b = 1/odds (break-even probability) and p the
+    win probability you claimed BEFORE the result (use p >= b; that is what an
+    EV rule bets on anyway). If no bet has positive EV (true win prob <= b),
+    the running product is a nonnegative supermartingale, so it EVER reaches
+    1/alpha with probability <= alpha, however often you look. If your claims
+    are exactly right, its inverse is a martingale and it EVER falls to beta
+    with probability <= beta. Decision: 'scale' at >= 1/alpha, 'kill' at
+    <= beta, else 'continue'. Returns (log_lr path, decision, bet index).
+    A shrunk claim (between b and p) is still valid and more robust."""
+    b = 1.0 / np.asarray(odds, float)
+    p = np.clip(np.asarray(p_claimed, float), 1e-9, 1 - 1e-9)
+    won = np.asarray(won, bool)
+    log_lr = np.cumsum(np.where(won, np.log(p / b), np.log((1 - p) / (1 - b))))
+    up, down = np.log(1.0 / alpha), np.log(beta)
+    hit = np.flatnonzero((log_lr >= up) | (log_lr <= down))
+    if hit.size == 0:
+        return log_lr, "continue", None
+    i = int(hit[0])
+    return log_lr, ("scale" if log_lr[i] >= up else "kill"), i
+
+
 # --------------------------------------------------------------------------- #
 # Live-betting substitute for CLV
 # --------------------------------------------------------------------------- #
