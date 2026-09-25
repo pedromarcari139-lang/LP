@@ -402,7 +402,7 @@ def blend_prob(p_market, p_model, coef):
     return 1.0 / (1.0 + np.exp(-(a + b * lq + c * (lp - lq))))
 
 
-def sprt_break_even(won, p_claimed, odds, alpha=0.05, beta=0.05):
+def sprt_break_even(won, p_claimed, odds, alpha=0.05, beta=0.05, groups=None):
     """Anytime-valid live monitoring (Wald's SPRT; validity by Ville's inequality).
 
     For bets in time order, multiply p/b if the backed side won and
@@ -413,12 +413,23 @@ def sprt_break_even(won, p_claimed, odds, alpha=0.05, beta=0.05):
     1/alpha with probability <= alpha, however often you look. If your claims
     are exactly right, its inverse is a martingale and it EVER falls to beta
     with probability <= beta. Decision: 'scale' at >= 1/alpha, 'kill' at
-    <= beta, else 'continue'. Returns (log_lr path, decision, bet index).
-    A shrunk claim (between b and p) is still valid and more robust."""
+    <= beta, else 'continue'. Returns (log_lr path, decision, step index).
+    A shrunk claim (between b and p) is still valid and more robust.
+
+    groups: pass the gameid (or series id) when you bet one game more than
+    once (15:00 and 20:00). Those bets settle on the same outcome, so their
+    factors must be AVERAGED, not multiplied: for two bets on one side at the
+    break-even price, E[f1*f2] = 1 + (p-b)^2 / (b(1-b)) > 1, which breaks the
+    guarantee. An average of such factors keeps E <= 1 (scale side) and,
+    because 1/mean(f) <= mean(1/f), the kill-side guarantee too. The path
+    then has one step per game, in order of first bet."""
     b = 1.0 / np.asarray(odds, float)
     p = np.clip(np.asarray(p_claimed, float), 1e-9, 1 - 1e-9)
     won = np.asarray(won, bool)
-    log_lr = np.cumsum(np.where(won, np.log(p / b), np.log((1 - p) / (1 - b))))
+    factor = np.where(won, p / b, (1 - p) / (1 - b))
+    if groups is not None:
+        factor = aggregate_by_game(factor, groups) / aggregate_by_game(np.ones_like(factor), groups)
+    log_lr = np.cumsum(np.log(factor))
     up, down = np.log(1.0 / alpha), np.log(beta)
     hit = np.flatnonzero((log_lr >= up) | (log_lr <= down))
     if hit.size == 0:

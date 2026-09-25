@@ -254,6 +254,20 @@ ok &= check("sprt: false scale-up <= 5% when checked after every bet", np.mean(n
 ok &= check("sprt: false kill <= 5% when the claim is right", np.mean(np.array(dec1) == "kill") <= 0.055,
             f"false kill={np.mean(np.array(dec1) == 'kill'):.3f}; scaled={np.mean(np.array(dec1) == 'scale'):.3f}")
 
+# two bets on the SAME game (15:00 and 20:00, same side) settle on one outcome:
+# multiplying their factors breaks the guarantee, averaging them keeps it
+n_games = 3000
+odds_g = rng.uniform(1.5, 3.5, (paths, n_games))
+claim_g = np.minimum(1.05 / odds_g, 0.99)
+won_g = rng.random((paths, n_games)) < 1 / odds_g            # break-even truth
+two = lambda a: np.repeat(a, 2, axis=1)                      # the same bet twice per game
+gid = np.repeat(np.arange(n_games), 2)
+mult = np.mean([tk.sprt_break_even(two(won_g)[i], two(claim_g)[i], two(odds_g)[i])[1] == "scale" for i in range(paths)])
+avg = np.mean([tk.sprt_break_even(two(won_g)[i], two(claim_g)[i], two(odds_g)[i], groups=gid)[1] == "scale"
+               for i in range(paths)])
+ok &= check("sprt with two bets per game: average factors (groups=gameid), never multiply", avg <= 0.055 and mult > avg,
+            f"multiplied={mult:.3f} averaged={avg:.3f}")
+
 # --------------------------------------------------------------------------- #
 # markout: unbiased when the later market has caught up, blind otherwise
 # --------------------------------------------------------------------------- #

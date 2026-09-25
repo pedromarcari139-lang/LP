@@ -123,7 +123,7 @@ looking at any result, or they become one more thing you overfit.
 | 6 | **Choose** | Among the gate's significant models: the largest information t, or the simplest one within noise of it (fixed in stage 0). Average only near-duplicates of one idea. | Never use the pick's backtest ROI as its expected ROI |
 | 7 | **Robustness** | Sign of the information statistic across time blocks, leagues, patches, 15:00 vs 20:00, favourite/underdog, odds bands; parameter plateau; audit the prices of the top-1% contributing bets | Edge lives in one slice you did not pre-specify. Pick is an isolated spike. A top bet sits on a wrong price (Clegg & Cartlidge 2025). |
 | 8 | **Lockbox** | One run of the one chosen model, with the stage-0 criterion. Use an information criterion (encompassing c, or the blend's log-loss gain): in EXP-5 a P&L criterion on 2,000 games detected a real edge 11% of the time, against 56% for the information test. | Fails: stop |
-| 9 | **Live** | Small stakes. SPRT between break-even (1/odds) and the blend's claimed probability, checked as often as you like. Log every attempt: requested vs obtained odds, rejections, later prices for markouts. | Scale up when the SPRT crosses 1/α = 20. Kill when it crosses β = 0.05. Markouts are an early warning, **never** a kill rule. |
+| 9 | **Live** | Small stakes. SPRT between break-even (1/odds) and the blend's claimed probability, checked as often as you like, with **one averaged factor per game** (`groups=gameid`). Log every attempt: requested vs obtained odds, rejections, later prices for markouts. | Scale up when the SPRT crosses 1/α = 20. Kill when it crosses β = 0.05. Markouts are an early warning, **never** a kill rule. |
 
 ---
 
@@ -449,6 +449,12 @@ information content.
     smaller edge 44% of the time, and scaled up only 25%.
   * Claim what the lockbox measured, or shrink the claim toward break-even. A shrunk claim keeps the
     guarantee.
+* **Bets on the same game at 15:00 and 20:00 settle on one outcome [confirmado: algebra and
+  `test_toolkit.py`].**
+  * Multiplying their factors breaks the guarantee. For two bets on one side at the break-even
+    price, E[f₁f₂] = 1 + (p−b)²/(b(1−b)) > 1.
+  * In the test, break-even bettors who bet every game twice were scaled up 16.2% of the time.
+  * Averaging the factors within each game (`groups=gameid`) kept it at 3.4%.
 * **The drop-top-1% rule kills real edges.**
   * Shares of real +3% edges (2,000 bets) whose ROI turns ≤ 0 after dropping the best 1% of bets:
     odds 1.9: 17% · odds 2.5: 31% · odds 3.5: 44% · odds 5.0: 59%.
@@ -543,7 +549,7 @@ python lol_resolution_check.py /path/to/oracles_elixir_csvs
 | 3 | `information_gate(y, q, P, groups=series_id)` |
 | 4 | `fit_blend` / `blend_prob` (walk-forward) |
 | 5 | `spa_vs_no_bet(R)`, `deflated_sharpe`, `pbo_cscv(R)`, `model_confidence_set(-R)` as reports |
-| 9 | `sprt_break_even` live |
+| 9 | `sprt_break_even(won, p_claimed, odds, groups=gameid)` live |
 
 ---
 
