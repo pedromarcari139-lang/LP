@@ -6,7 +6,8 @@ Conventions (read before using on real data)
 * One row = one GAME (gameid unique), rows sorted by game start time.
   If a model bets at 15:00 AND 20:00 of the same game, SUM both bets into the
   game row first (see `aggregate_by_game`). Then no fold / block / bootstrap
-  draw can ever split a game.
+  draw can ever split a game. Maps of one Bo3/Bo5 series are also dependent:
+  cluster by series id where a function takes `groups`.
 * R[g, k] = profit of model k in game g, in units staked (0 if no bet).
 * Every input must already be OUT-OF-SAMPLE (walk-forward) predictions/returns.
   Nothing in this file can detect a model that was fitted on the rows it scores.
@@ -24,13 +25,15 @@ EULER_GAMMA = 0.5772156649015329
 # --------------------------------------------------------------------------- #
 def devig_multiplicative(odds_a, odds_b):
     """Fair probability of side A with the proportional (multiplicative) method.
-    Other methods (Shin, power, odds-ratio) differ mostly at long odds."""
+    With two outcomes the additive and Shin methods coincide and differ from
+    this one by up to ~2 pp on lopsided prices (README §8)."""
     ia, ib = 1.0 / np.asarray(odds_a, float), 1.0 / np.asarray(odds_b, float)
     return ia / (ia + ib)
 
 
-def flat_bet_returns(p_model, odds_a, odds_b, y, min_ev=0.0):
-    """Unit stake on the side whose EV (at the offered odds) exceeds `min_ev`.
+def flat_bet_returns(p_model, odds_a, odds_b, y, min_ev=0.0, max_odds=np.inf):
+    """Unit stake on the side whose EV (at the offered odds) exceeds `min_ev`,
+    never on a side priced above `max_odds`.
 
     p_model: (n,) or (n, K) model probability that side A wins.
     odds_a, odds_b, y: (n,) or broadcastable; y = 1 if side A won.
@@ -38,8 +41,8 @@ def flat_bet_returns(p_model, odds_a, odds_b, y, min_ev=0.0):
     """
     ev_a = p_model * odds_a - 1.0
     ev_b = (1.0 - p_model) * odds_b - 1.0
-    bet_a = (ev_a > min_ev) & (ev_a >= ev_b)
-    bet_b = (ev_b > min_ev) & (ev_b > ev_a)
+    bet_a = (ev_a > min_ev) & (ev_a >= ev_b) & (odds_a <= max_odds)
+    bet_b = (ev_b > min_ev) & (ev_b > ev_a) & (odds_b <= max_odds)
     profit = np.where(bet_a, y * odds_a - 1.0, 0.0)
     profit = np.where(bet_b, (1 - y) * odds_b - 1.0, profit)
     return profit, bet_a | bet_b
@@ -74,6 +77,8 @@ def psr(x, sr_benchmark=0.0):
     """Probabilistic Sharpe Ratio: P(true SR > sr_benchmark) given one track
     record x (per-game returns). Uses sample skewness and RAW kurtosis."""
     x = np.asarray(x, float)
+    if x.std() == 0:
+        raise ValueError("track record has no variance (a model that never bets?)")
     T = x.size
     sr = float(sharpe(x))
     g3 = stats.skew(x)
@@ -84,18 +89,24 @@ def psr(x, sr_benchmark=0.0):
 
 def expected_max_sr(n_trials, var_sr):
     """Expected maximum of n_trials SR estimates whose true SR is 0
-    (approximation used by the Deflated Sharpe Ratio)."""
+    (approximation used by the Deflated Sharpe Ratio). The approximation goes
+    negative for n_trials below ~1.3, so it is floored at 0."""
     if n_trials <= 1:
         return 0.0
     z1 = stats.norm.ppf(1.0 - 1.0 / n_trials)
     z2 = stats.norm.ppf(1.0 - 1.0 / (n_trials * np.e))
-    return float(np.sqrt(var_sr) * ((1 - EULER_GAMMA) * z1 + EULER_GAMMA * z2))
+    return float(max(0.0, np.sqrt(var_sr) * ((1 - EULER_GAMMA) * z1 + EULER_GAMMA * z2)))
 
 
 def deflated_sharpe(x_selected, sr_all_trials, n_trials=None):
-    """DSR = PSR against the expected max SR of all trials.
-    n_trials defaults to the number of SRs given; pass an effective N when
-    trials are correlated. Returns (dsr, sr0)."""
+    """DSR = PSR against the expected max SR of all trials. Returns (dsr, sr0).
+
+    Pass n_trials = M, the number of ALL trials ever run (default: the number
+    of SRs given), with the cross-sectional variance of their SRs (always used).
+    That variance already shrinks when trials are correlated, so shrinking N
+    too (e.g. with `implied_independent_trials`) counts the correlation twice:
+    200 trials, correlation 0.9, true SR 0 -> 8.5% false positives at a nominal
+    5% with N_hat vs 4.2% with N = M (README §6)."""
     sr_all = np.asarray(sr_all_trials, float)
     n = sr_all.size if n_trials is None else n_trials
     sr0 = expected_max_sr(n, sr_all.var(ddof=1))
@@ -105,12 +116,14 @@ def deflated_sharpe(x_selected, sr_all_trials, n_trials=None):
 def implied_independent_trials(R):
     """Bailey & López de Prado (2014), Appendix A.3, Eq. 9:
     N_hat = rho + (1 - rho) * M, rho = average off-diagonal correlation of the
-    M trials' per-game returns. The paper itself calls it an interpolation and
-    warns that correlation only captures linear dependence."""
+    M trials' per-game returns. Reported for reference only: do NOT feed it to
+    `deflated_sharpe` together with the SR variance of the same trials."""
     R = np.asarray(R, float)
     R = R[:, R.std(0) > 0]
+    M = R.shape[1]
+    if M < 2:
+        return 1.0
     C = np.corrcoef(R, rowvar=False)
-    M = C.shape[0]
     rho = (C.sum() - M) / (M * (M - 1))
     return float(rho + (1.0 - rho) * M)
 
@@ -125,9 +138,15 @@ def pbo_cscv(R, n_blocks=16, metric="sharpe"):
     game is never split). For every C(S, S/2) choice of IS blocks, the IS-best
     model is ranked inside the complementary OOS blocks.
 
-    CAUTION: half of the splits train on games that come AFTER the test games.
-    CSCV measures how stable the SELECTION is, not whether the edge survives
-    the passage of time; pair it with a walk-forward holdout.
+    CAUTION
+    * Half of the splits select on games that come AFTER the test games. CSCV
+      measures how stable the SELECTION is, not whether the edge survives the
+      passage of time; pair it with a walk-forward holdout.
+    * PBO ~ 0.5 whenever candidates have equal skill, with or without an edge.
+      Read it next to prob_oos_loss.
+    * degradation_slope: IS and OOS are complementary halves, so for a model
+      selected in every split OOS = 2 * full - IS and the slope is -1 by
+      construction. It says little about overfitting.
     """
     R = np.asarray(R, float)
     T, N = R.shape
@@ -192,23 +211,36 @@ def bootstrap_weights(n, B, rng, mean_block=1.0):
     return np.bincount(flat, minlength=B * n).reshape(B, n).astype(float)
 
 
-def spa_vs_no_bet(R, reps=1000, mean_block=1.0, seed=None):
-    """Hansen (2005) SPA (consistent p-value) and White (2000) Reality Check.
+def spa_vs_no_bet(R, reps=1000, mean_block=1.0, seed=None, min_bets=100):
+    """Hansen (2005) SPA (studentized, consistent p-value) and White (2000)
+    Reality Check (not studentized).
 
     R[g, k] = profit per game. Benchmark = not betting (profit 0).
     H0: no model has a positive expected profit. The max statistic is
     bootstrapped jointly, so correlation between models is handled
     automatically (no effective-N guess needed).
-    Checked against arch.bootstrap.SPA in test_toolkit.py; this version
-    exists because it is ~100x faster at 20k games (Monte Carlo needs it)."""
-    rng = np.random.default_rng(seed)
+
+    min_bets: candidates with fewer bets are dropped before testing. Studentizing
+    the mean of ~10 skewed bets over-rejects: at zero EV, 200 candidates with
+    bet rates from 0.5% to 40% at fixed short-to-long odds gave 9.4% rejections
+    at a nominal 5% (5.8% when every candidate bet on >= 5% of 2,000 games).
+
+    test_toolkit.py checks the SPA against a literal re-implementation and the
+    RC against arch. arch 8.0's SPA does not studentize, and its variance loop
+    is O(n^2), which is why this version exists.
+    """
     D = np.asarray(R, float)
+    keep = (D != 0).sum(0) >= min_bets
+    if not keep.any():
+        return {"p_spa": 1.0, "p_rc": 1.0, "n_tested": 0}
+    D = D[:, keep]
+    rng = np.random.default_rng(seed)
     n = D.shape[0]
     W = bootstrap_weights(n, reps, rng, mean_block)
     dbar = D.mean(0)
     dstar = (W @ D) / n                                   # (reps, K) bootstrap means
     omega = np.sqrt(n * ((dstar - dbar) ** 2).mean(0))    # sd of sqrt(n) * dbar
-    omega = np.where(omega > 1e-12, omega, np.inf)        # models that never bet
+    omega = np.where(omega > 1e-12, omega, np.inf)
     t = np.sqrt(n) * dbar / omega
     # SPA: clearly bad models (t below -sqrt(2 log log n)) keep their own mean
     mu = np.where(t <= -np.sqrt(2.0 * np.log(np.log(n))), dbar, 0.0)
@@ -216,7 +248,7 @@ def spa_vs_no_bet(R, reps=1000, mean_block=1.0, seed=None):
     p_spa = float((np.maximum(z.max(1), 0.0) >= max(t.max(), 0.0)).mean())
     # RC: not studentized, every model recentred at zero
     p_rc = float(((dstar - dbar).max(1) >= dbar.max()).mean())
-    return {"p_spa": p_spa, "p_rc": p_rc}
+    return {"p_spa": p_spa, "p_rc": p_rc, "n_tested": int(keep.sum())}
 
 
 def model_confidence_set(L, alpha=0.10, reps=1000, block_size=1, method="R", seed=None):
@@ -224,9 +256,9 @@ def model_confidence_set(L, alpha=0.10, reps=1000, block_size=1, method="R", see
 
     L[g, k] = LOSS of model k in game g (lower = better): -profit, or log loss.
     Returns a boolean mask of the models that cannot be told apart from the
-    best one at level alpha. method="R" (range statistic) is the arch default;
-    method="max" is ~25x faster but has little power when ONE model dominates
-    many equal ones (see test_toolkit.py)."""
+    best one at level alpha. method="R" (range statistic, the arch default) is
+    slower but can be much more discriminating; method="max" has little power
+    when ONE model dominates many equal ones (see test_toolkit.py)."""
     from arch.bootstrap import MCS
 
     L = np.asarray(L, float)
@@ -246,11 +278,14 @@ def log_loss(y, p, eps=1e-12):
 
 
 def clustered_mean_test(d, groups):
-    """Mean of row-level d with a standard error clustered by `groups` (gameid).
+    """Mean of row-level d with a standard error clustered by `groups`
+    (gameid, or series id to also cover maps of one series).
     Returns (mean, se, z)."""
     d = np.asarray(d, float)
     _, inv = np.unique(groups, return_inverse=True)
     G = inv.max() + 1
+    if G < 2:
+        raise ValueError("need at least two clusters")
     resid_sum = np.bincount(inv, weights=d - d.mean(), minlength=G)
     se = np.sqrt((resid_sum ** 2).sum() * G / (G - 1)) / d.size
     return float(d.mean()), float(se), float(d.mean() / se)
@@ -264,19 +299,35 @@ def logloss_vs_market(y, p_model, p_market, groups):
 
 
 def encompassing_test(y, p_market, p_model, groups):
-    """Fair–Shiller-style encompassing regression on the logit scale:
-        logit P(y=1) = a + b*logit(p_market) + c*(logit(p_model) - logit(p_market))
-    c > 0 <=> the model carries information the market price does not.
-    Standard errors clustered by game. One-sided p-value for c > 0."""
+    """Encompassing regression on the logit scale (Fair & Shiller 1990 idea;
+    Benter 1994 combined his model with the public odds the same way):
+
+        logit P(y=1) = a + b*logit(q) + c*(logit(p) - logit(q))
+
+    * c > 0: the model carries information beyond ANY logit-linear
+      recalibration of the price.
+    * (a, b) != (0, 1): the price itself is miscalibrated (e.g. a
+      favourite-longshot bias). An edge that is only a recalibration of the
+      price shows up here, NOT in c.
+    * p_joint: Wald test of (a, b, c) = (0, 1, 0), i.e. the fitted blend
+      improves on the raw price.
+    Neither implies profit after margin and execution. SEs clustered by
+    `groups` (gameid, or series id)."""
     import statsmodels.api as sm
 
-    lm = np.log(p_market / (1 - p_market))
-    lp = np.log(p_model / (1 - p_model))
-    X = sm.add_constant(np.column_stack([lm, lp - lm]))
+    eps = 1e-9
+    q = np.clip(np.asarray(p_market, float), eps, 1 - eps)
+    p = np.clip(np.asarray(p_model, float), eps, 1 - eps)
+    lm, lp = np.log(q / (1 - q)), np.log(p / (1 - p))
+    X = sm.add_constant(np.column_stack([lm, lp - lm]), has_constant="add")
     fit = sm.Logit(y, X).fit(disp=0, cov_type="cluster", cov_kwds={"groups": groups})
-    c, se = fit.params[2], fit.bse[2]
-    return {"b_market": float(fit.params[1]), "c_model": float(c), "se_c": float(se),
-            "p_one_sided": float(1 - stats.norm.cdf(c / se))}
+    a, b, c = (float(v) for v in fit.params)
+    se_c = float(fit.bse[2])
+    dev = np.array([a, b - 1.0, c])
+    wald = float(dev @ np.linalg.solve(fit.cov_params(), dev))
+    return {"a": a, "b_market": b, "c_model": c, "se_c": se_c,
+            "p_one_sided": float(1 - stats.norm.cdf(c / se_c)),
+            "p_joint": float(1 - stats.chi2.cdf(wald, 3))}
 
 
 # --------------------------------------------------------------------------- #

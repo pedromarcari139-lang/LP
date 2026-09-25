@@ -2,9 +2,9 @@
 Synthetic "LoL live betting" world used to put numbers on the claims in README.md.
 
 It is NOT a model of real LoL markets. Every magnitude (margin, size of the edge,
-how much of the game is decided between 15:00 and 20:00) is an assumption in
-PARAMS below. The point is to show MECHANISMS (selection bias, what PBO / DSR /
-SPA / MCS react to, why markouts can replace CLV) with concrete numbers.
+how much of the game is decided between 15:00 and 20:00, the odds cap) is an
+assumption in PARAMS below. The point is to show MECHANISMS (selection bias, what
+PBO / DSR / SPA / MCS react to, when markouts can replace CLV) with numbers.
 
 Latent final score X = A + B + Bp + C + D, side A wins iff X > 0 (all Normal):
   A  : public at 15:00 (market and models see it)
@@ -14,11 +14,12 @@ Latent final score X = A + B + Bp + C + D, side A wins iff X > 0 (all Normal):
   D  : revealed after 20:00
 Market fair prices are exact conditional probabilities given public info, so the
 market is calibrated and a martingale; the bookmaker adds a proportional margin.
+No rule ever backs a price above MAX_ODDS.
 
 Models are fixed rules (not fitted), so the ONLY overfitting simulated here is
 selection among 200 candidates. Real pipelines add fitting overfit and leakage.
 
-Run:  python simulate.py            (full run, ~1 h on 4 cores)
+Run:  python simulate.py            (full run, ~1.5 h on 4 cores)
       python simulate.py --quick    (smoke test)
 """
 import argparse
@@ -27,19 +28,20 @@ import time
 from dataclasses import dataclass
 
 import numpy as np
-from scipy import stats
 from scipy.stats import norm
 
 import oos_toolkit as tk
 
-PARAMS = dict(VA=0.35, VC=0.15, margin=0.05, sig_common=0.08, sig_idio=0.03, V_EDGE=0.005)
+PARAMS = dict(VA=0.35, VC=0.15, margin=0.05, sig_common=0.08, sig_idio=0.03,
+              V_EDGE=0.005, MAX_ODDS=5.0)
 
 
 # --------------------------------------------------------------------------- #
 # World
 # --------------------------------------------------------------------------- #
-def draw_games(n, rng, VB=0.0, VBp=0.0):
-    VA, VC, m = PARAMS["VA"], PARAMS["VC"], PARAMS["margin"]
+def draw_games(n, rng, VB=0.0, VBp=0.0, margin=None):
+    VA, VC = PARAMS["VA"], PARAMS["VC"]
+    m = PARAMS["margin"] if margin is None else margin
     VD = 1.0 - VA - VB - VBp - VC
     A = rng.normal(0, np.sqrt(VA), n)
     B = rng.normal(0, np.sqrt(VB), n) if VB > 0 else np.zeros(n)
@@ -62,16 +64,21 @@ class Models:
     informative: np.ndarray   # does the signal contain B + Bp?
 
 
+GRID_BETAS = np.linspace(0.4, 0.8, 50)
+GRID_THRS = (0.0, 0.02, 0.04, 0.06)
+CLONE = (0.6, 0.02)
+
+
 def grid_models(rng, n_informative, K=200):
     """50 signal weights x 4 EV thresholds: 'many very similar models'."""
-    beta = np.repeat(np.linspace(0.4, 0.8, K // 4), 4)
-    thr = np.tile([0.0, 0.02, 0.04, 0.06], K // 4)
+    beta = np.repeat(GRID_BETAS, K // 50)
+    thr = np.tile(GRID_THRS, K // 4)
     inf = np.zeros(K, bool)
     inf[rng.choice(K, n_informative, replace=False)] = True
     return Models(beta, thr, inf)
 
 
-def clone_models(informative, K=200, beta=0.6, thr=0.02):
+def clone_models(informative, K=200, beta=CLONE[0], thr=CLONE[1]):
     """200 copies of one rule that differ only by idiosyncratic feature noise:
     every candidate has EXACTLY the same true edge."""
     return Models(np.full(K, beta), np.full(K, thr), np.full(K, informative))
@@ -89,20 +96,44 @@ def returns_15(g, models, rng):
     S = model_signal(g, models, rng)
     p = norm.cdf((g["A"][:, None] + models.beta[None, :] * S) / np.sqrt(1 - PARAMS["VA"]))
     R, bet = tk.flat_bet_returns(p, g["oa15"][:, None], g["ob15"][:, None],
-                                 g["y"][:, None], models.thr[None, :])
+                                 g["y"][:, None], models.thr[None, :], PARAMS["MAX_ODDS"])
     return R, bet, p
-
-
-def true_roi(models, k, VB, rng, n=200_000):
-    """ROI per bet of model k measured on a huge fresh sample (the 'truth')."""
-    g = draw_games(n, rng, VB=VB)
-    one = Models(models.beta[k:k + 1], models.thr[k:k + 1], models.informative[k:k + 1])
-    R, bet, _ = returns_15(g, one, rng)
-    return R.sum() / max(bet.sum(), 1)
 
 
 def roi_per_bet(R, bet):
     return R.sum(0) / np.maximum(bet.sum(0), 1)
+
+
+# --------------------------------------------------------------------------- #
+# True ROI of a rule
+# * no information: every bet has EV = 1/(1+m) - 1 exactly (price is fair).
+# * informative: depends only on (beta, thr); estimated once on 10M games.
+# --------------------------------------------------------------------------- #
+TRUE_ROI = {}
+
+
+def build_true_roi_table(n_total=10_000_000, chunk=100_000, seed=99):
+    pairs = sorted({(round(float(b), 10), t) for b in GRID_BETAS for t in GRID_THRS} | {CLONE})
+    models = Models(np.array([p[0] for p in pairs]), np.array([p[1] for p in pairs]),
+                    np.ones(len(pairs), bool))
+    rng = np.random.default_rng(seed)
+    profit, bets = np.zeros(len(pairs)), np.zeros(len(pairs))
+    for _ in range(n_total // chunk):
+        R, bet, _ = returns_15(draw_games(chunk, rng, VB=PARAMS["V_EDGE"]), models, rng)
+        profit += R.sum(0)
+        bets += bet.sum(0)
+    for i, pair in enumerate(pairs):
+        TRUE_ROI[pair] = profit[i] / bets[i]
+    return {"n_games": n_total, "min_bets_per_rule": int(bets.min()),
+            "informative_roi_min": float(min(TRUE_ROI.values())),
+            "informative_roi_max": float(max(TRUE_ROI.values())),
+            "clone_roi": float(TRUE_ROI[CLONE])}
+
+
+def true_roi(models, k, margin):
+    if not models.informative[k]:
+        return 1.0 / (1.0 + margin) - 1.0
+    return TRUE_ROI[(round(float(models.beta[k]), 10), float(models.thr[k]))]
 
 
 # --------------------------------------------------------------------------- #
@@ -127,10 +158,11 @@ def exp1_sample_size():
 # --------------------------------------------------------------------------- #
 def exp2_winners_curse(reps, ns, seed=2):
     rng = np.random.default_rng(seed)
+    m = PARAMS["margin"]
     out = []
     for world, n_inf, VB in (("grid_null", 0, 0.0), ("grid_20_informative", 20, PARAMS["V_EDGE"])):
         for n in ns:
-            is_roi, oos_roi, naive_sig = [], [], []
+            is_roi, tr_roi, naive_sig, picked_inf = [], [], [], []
             for _ in range(reps):
                 models = grid_models(rng, n_inf)
                 R, bet, _ = returns_15(draw_games(n, rng, VB=VB), models, rng)
@@ -138,23 +170,32 @@ def exp2_winners_curse(reps, ns, seed=2):
                 k = int(sr.argmax())
                 is_roi.append(roi_per_bet(R, bet)[k])
                 naive_sig.append(sr[k] * np.sqrt(n) > norm.ppf(0.95))
-                oos_roi.append(true_roi(models, k, VB, rng))
+                tr_roi.append(true_roi(models, k, m))
+                picked_inf.append(models.informative[k])
             out.append(dict(world=world, n_games=n,
                             median_is_roi=float(np.median(is_roi)),
-                            median_true_roi=float(np.median(oos_roi)),
-                            share_true_roi_negative=float(np.mean(np.array(oos_roi) < 0)),
+                            median_true_roi=float(np.median(tr_roi)),
+                            share_pick_informative=float(np.mean(picked_inf)),
+                            share_true_roi_negative=float(np.mean(np.array(tr_roi) < 0)),
                             share_naive_p_lt_5pct=float(np.mean(naive_sig))))
     return out
 
 
 # --------------------------------------------------------------------------- #
-# EXP-3/4  What PBO, DSR, SPA, RC, MCS say in four worlds
+# EXP-3/4  What PBO, DSR, SPA, RC, MCS say in six worlds
+# "minus margin" worlds: every rule without information loses the margin.
+# "zero EV" worlds: no margin, so rules without information have EV exactly 0;
+# rejection rates there are the tests' real false-positive rates (size).
 # --------------------------------------------------------------------------- #
 WORLDS = {
-    "clones_no_edge": dict(models=lambda rng: clone_models(False), VB=0.0),
-    "clones_same_real_edge": dict(models=lambda rng: clone_models(True), VB=PARAMS["V_EDGE"]),
-    "grid_no_edge": dict(models=lambda rng: grid_models(rng, 0), VB=0.0),
-    "grid_20_of_200_real": dict(models=lambda rng: grid_models(rng, 20), VB=PARAMS["V_EDGE"]),
+    "clones_zero_ev": dict(models=lambda rng: clone_models(False), VB=0.0, margin=0.0),
+    "grid_zero_ev": dict(models=lambda rng: grid_models(rng, 0), VB=0.0, margin=0.0),
+    "clones_no_edge": dict(models=lambda rng: clone_models(False), VB=0.0, margin=PARAMS["margin"]),
+    "grid_no_edge": dict(models=lambda rng: grid_models(rng, 0), VB=0.0, margin=PARAMS["margin"]),
+    "clones_same_real_edge": dict(models=lambda rng: clone_models(True), VB=PARAMS["V_EDGE"],
+                                  margin=PARAMS["margin"]),
+    "grid_20_of_200_real": dict(models=lambda rng: grid_models(rng, 20), VB=PARAMS["V_EDGE"],
+                                margin=PARAMS["margin"]),
 }
 
 
@@ -162,38 +203,45 @@ def one_replication(world, n, B, seed):
     rng = np.random.default_rng(seed)
     spec = WORLDS[world]
     models = spec["models"](rng)
-    R, bet, _ = returns_15(draw_games(n, rng, VB=spec["VB"]), models, rng)
+    R, bet, _ = returns_15(draw_games(n, rng, VB=spec["VB"], margin=spec["margin"]), models, rng)
     sr = tk.sharpe(R)
     k = int(sr.argmax())
     K = R.shape[1]
-    p_naive = 1 - norm.cdf(sr[k] * np.sqrt(n))
-    dsr_n, sr0_n = tk.deflated_sharpe(R[:, k], sr, K)
+    inf_k = bool(models.informative[k])
+    naive = 1 - norm.cdf(sr[k] * np.sqrt(n)) < 0.05
+    bonf = 1 - norm.cdf(sr[k] * np.sqrt(n)) < 0.05 / K
+    dsr_m, _ = tk.deflated_sharpe(R[:, k], sr, K)
     n_hat = tk.implied_independent_trials(R)
     dsr_hat, _ = tk.deflated_sharpe(R[:, k], sr, max(n_hat, 1.0))
     spa = tk.spa_vs_no_bet(R, reps=B, seed=int(rng.integers(2 ** 31)))
-    # T_max for speed; see test_toolkit.py for when it loses power
-    in_mcs = tk.model_confidence_set(-R, alpha=0.10, reps=B, method="max",
+    in_mcs = tk.model_confidence_set(-R, alpha=0.10, reps=min(B, 300), method="R",
                                      seed=int(rng.integers(2 ** 31)))
     pbo = tk.pbo_cscv(R, n_blocks=16)
     corr = np.corrcoef(R[:, R.std(0) > 0], rowvar=False)
-    return dict(
+    out = dict(
         is_roi_selected=float(roi_per_bet(R, bet)[k]),
         bets_selected=int(bet[:, k].sum()),
         median_bets_all_models=float(np.median(bet.sum(0))),
-        true_roi_selected=float(true_roi(models, k, spec["VB"], rng)),
-        selected_is_informative=bool(models.informative[k]),
-        naive_reject=bool(p_naive < 0.05),
-        bonferroni_reject=bool(p_naive < 0.05 / K),
-        dsr_N200=dsr_n, dsr_reject_N200=bool(dsr_n > 0.95),
-        n_hat=n_hat, dsr_reject_Nhat=bool(dsr_hat > 0.95),
+        true_roi_selected=float(true_roi(models, k, spec["margin"])),
+        selected_is_informative=inf_k,
+        n_hat=n_hat,
         p_spa=spa["p_spa"], spa_reject=bool(spa["p_spa"] < 0.05),
         p_rc=spa["p_rc"], rc_reject=bool(spa["p_rc"] < 0.05),
+        spa_n_tested=spa["n_tested"],
         mcs_size=int(in_mcs.sum()),
         mcs_informative_share=float(models.informative[in_mcs].mean()),
         pbo=pbo["pbo"], prob_oos_loss=pbo["prob_oos_loss"],
         degradation_slope=pbo["degradation_slope"],
         mean_pairwise_corr=float(corr[np.triu_indices_from(corr, 1)].mean()),
     )
+    # tests about the SELECTED model: a rejection is a true discovery only if
+    # the selected model really has information
+    for name, rej in (("naive", naive), ("bonferroni", bonf),
+                      ("dsr_N_M", dsr_m > 0.95), ("dsr_N_hat", dsr_hat > 0.95)):
+        out[f"{name}_reject"] = bool(rej)
+        out[f"{name}_true_disc"] = bool(rej and inf_k)
+        out[f"{name}_false_disc"] = bool(rej and not inf_k)
+    return out
 
 
 def _one_replication_star(args):
@@ -211,10 +259,9 @@ def exp34_worlds(reps, n, B, seed=34, processes=4):
     for i, world in enumerate(WORLDS):
         rs = flat[i * reps:(i + 1) * reps]
         agg = {key: float(np.mean([r[key] for r in rs])) for key in rs[0]}
-        agg["median_pbo"] = float(np.median([r["pbo"] for r in rs]))
-        agg["median_true_roi_selected"] = float(np.median([r["true_roi_selected"] for r in rs]))
-        agg["median_is_roi_selected"] = float(np.median([r["is_roi_selected"] for r in rs]))
-        agg["median_bets_selected"] = float(np.median([r["bets_selected"] for r in rs]))
+        for key in ("pbo", "true_roi_selected", "is_roi_selected", "bets_selected", "mcs_size"):
+            agg[f"median_{key}"] = float(np.median([r[key] for r in rs]))
+        agg["replications"] = reps
         summary[world] = agg
     return summary
 
@@ -228,15 +275,18 @@ def exp5_power(reps, ns, seed=5):
     out = []
     for label, models, VB in (("real_edge", one_inf, PARAMS["V_EDGE"]), ("no_edge", one_null, 0.0)):
         for n in ns:
-            rej = dict(roi_ttest=0, logloss_vs_market=0, encompassing=0)
+            rej = dict(roi_ttest=0, logloss_vs_market=0, encompassing_c=0, encompassing_joint=0)
             for _ in range(reps):
                 g = draw_games(n, rng, VB=VB)
                 R, _, p = returns_15(g, models, rng)
                 r = R[:, 0]
-                rej["roi_ttest"] += r.mean() / (r.std(ddof=1) / np.sqrt(n)) > norm.ppf(0.95)
+                if r.std() > 0:
+                    rej["roi_ttest"] += r.mean() / (r.std(ddof=1) / np.sqrt(n)) > norm.ppf(0.95)
                 gid = np.arange(n)
                 rej["logloss_vs_market"] += tk.logloss_vs_market(g["y"], p[:, 0], g["q15"], gid)["p_one_sided"] < 0.05
-                rej["encompassing"] += tk.encompassing_test(g["y"], g["q15"], p[:, 0], gid)["p_one_sided"] < 0.05
+                enc = tk.encompassing_test(g["y"], g["q15"], p[:, 0], gid)
+                rej["encompassing_c"] += enc["p_one_sided"] < 0.05
+                rej["encompassing_joint"] += enc["p_joint"] < 0.05
             out.append(dict(world=label, n_games=n, **{k: v / reps for k, v in rej.items()}))
     return out
 
@@ -246,7 +296,7 @@ def exp5_power(reps, ns, seed=5):
 # --------------------------------------------------------------------------- #
 def exp6_markouts(n_big, reps, ns, seed=6):
     rng = np.random.default_rng(seed)
-    beta, thr = 0.6, 0.02
+    beta, thr, cap = CLONE[0], CLONE[1], PARAMS["MAX_ODDS"]
     res = {}
     for case, VB, VBp in (("catch_up_edge", PARAMS["V_EDGE"], 0.0),
                           ("persistent_edge", 0.0, PARAMS["V_EDGE"]),
@@ -257,7 +307,7 @@ def exp6_markouts(n_big, reps, ns, seed=6):
             idio = rng.normal(0, PARAMS["sig_idio"], n)
             s15 = g["B"] + g["Bp"] + common + idio
             p15 = norm.cdf((g["A"] + beta * s15) / np.sqrt(1 - PARAMS["VA"]))
-            r15, bet15 = tk.flat_bet_returns(p15, g["oa15"], g["ob15"], g["y"], thr)
+            r15, bet15 = tk.flat_bet_returns(p15, g["oa15"], g["ob15"], g["y"], thr, cap)
             back_a = bet15 & (p15 * g["oa15"] > (1 - p15) * g["ob15"])
             odds = np.where(back_a, g["oa15"], g["ob15"])
             q_later = np.where(back_a, g["q20"], 1 - g["q20"])
@@ -267,7 +317,7 @@ def exp6_markouts(n_big, reps, ns, seed=6):
             # the same rule at 20:00: its only remaining private info is Bp
             s20 = g["Bp"] + common + idio if VBp > 0 else np.zeros(n)
             p20 = norm.cdf((g["A"] + g["B"] + g["C"] + beta * s20) / np.sqrt(g["VBp"] + g["VD"]))
-            r20, bet20 = tk.flat_bet_returns(p20, g["oa20"], g["ob20"], g["y"], thr)
+            r20, bet20 = tk.flat_bet_returns(p20, g["oa20"], g["ob20"], g["y"], thr, cap)
             return r15, bet15, mk, resid, r20, bet20
 
         r15, bet15, mk, resid, r20, bet20 = one_sample(n_big)
@@ -280,6 +330,7 @@ def exp6_markouts(n_big, reps, ns, seed=6):
         se_naive = vals.std(ddof=1) / np.sqrt(vals.size)
         d = dict(
             bets_15=int(bet15.sum()), mean_profit_per_bet=float(pr.mean()),
+            se_profit_mean=float(pr.std() / np.sqrt(pr.size)),
             mean_markout_per_bet=float(m.mean()), sd_profit=float(pr.std()),
             sd_markout=float(m.std()), variance_ratio=float(pr.var() / m.var()),
             mean_residual_profit_minus_markout=float(resid[bet15].mean()),
@@ -289,9 +340,6 @@ def exp6_markouts(n_big, reps, ns, seed=6):
                                           if both.sum() > 10 else None),
             se_ratio_clustered_over_naive=float(se_cl / se_naive),
         )
-        # bets needed for t = 2, only meaningful when the mean is positive
-        d["bets_needed_t2_profit"] = int((2 * pr.std() / pr.mean()) ** 2) if pr.mean() > 0 else None
-        d["bets_needed_t2_markout"] = int((2 * m.std() / m.mean()) ** 2) if m.mean() > 0 else None
         power = []
         for n in ns:
             rej_p = rej_m = 0
@@ -317,6 +365,8 @@ def main():
     todo = set(a.only.split(","))
     results = {"params": PARAMS}
     t0 = time.time()
+    results["true_roi_table"] = build_true_roi_table(n_total=500_000 if q else 10_000_000)
+    print("true-ROI table done", round(time.time() - t0), "s", flush=True)
     if "1" in todo:
         results["exp1_sample_size"] = exp1_sample_size()
     if "2" in todo:

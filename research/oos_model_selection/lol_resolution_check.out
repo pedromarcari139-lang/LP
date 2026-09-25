@@ -1,8 +1,10 @@
-blue rows 33363, complete 28338, dropped games shorter than 20:00: 166, used 28170
-train games (2022): 10592, test games (2023-24): 17578
-at 15:00  accuracy=0.741  logloss=0.5141  mean p=0.532 vs blue winrate=0.530
-at 20:00  accuracy=0.796  logloss=0.4325  mean p=0.534 vs blue winrate=0.530
-E[q15(1-q15)]=0.1758  E[(q20-q15)^2]=0.0288  E[(y-q20)^2]=0.1407  (martingale => first ~ second + third: 0.1695)
-mean(q20-q15)=+0.0023 (martingale => ~0)
-variance ratio profit/markout (both sides, fair odds): 12.76
-same ratio, only games with 0.3<q15<0.7: 5.62
+blue-side rows 33363; complete with 15:00 state: 28333; ended before 20:00: 163 (kept: their 20:00 price is the result)
+train games (2022): 10656, test games (2023-24): 17677
+at 15:00  accuracy=0.743  logloss=0.5114  mean p=0.532 vs blue winrate=0.531
+at 20:00 (live games) accuracy=0.796  logloss=0.4325
+E[q15(1-q15)]=0.1747  E[(q20-q15)^2]=0.0287  E[(y-q20)^2]=0.1399
+martingale identity gap E[q15(1-q15)] - E[dq^2] - E[(y-q20)^2] = +0.0061 (SE 0.0014); mean(q20-q15) = +0.0023; Brier at 15:00 = 0.1709
+variance ratio profit/markout, all sides        : 15.70  (100% of sides)
+variance ratio profit/markout, fair odds 1.5-3.0:  5.50  (36% of sides)
+variance ratio profit/markout, fair odds <= 5   :  5.86  (82% of sides)
+sides with q15 < 0.1: 7.9% of sides, 70.7% of the profit variance

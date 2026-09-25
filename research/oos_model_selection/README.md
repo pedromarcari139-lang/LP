@@ -4,7 +4,10 @@ Scope: ~200 similar models, live binary markets at fixed game-clock timestamps (
 no closing line available. What to compute, in what order, and when to kill a model or an edge.
 
 Evidence used here:
-* `oos_toolkit.py`: reference implementations (checked by `test_toolkit.py`, cross-checked against `arch`).
+* `oos_toolkit.py`: reference implementations, checked by `test_toolkit.py` against known answers:
+  * the SPA against a literal re-implementation of Hansen (2005);
+  * the RC and the MCS against the `arch` package. `arch` 8.0's SPA does not studentize (source read),
+    so it cannot check the SPA itself.
 * `simulate.py`: synthetic world, which gives the numbers in sections 5–7 (`results.json`).
 * `lol_resolution_check.py`: real pro-LoL data (Oracle's Elixir 2022–24), used in section 5.
 * A literature check (primary sources where reachable; see References).
@@ -33,7 +36,7 @@ Tags: **[confirmado]** = source read or computed here · **[provável]** = well 
      for combining the model with the public price.
 4. **You can have a live CLV: the markout [confirmado: the math; provável: the magnitude].**
    * Re-price each bet at a later fair price, e.g. the 20:00 price for a 15:00 bet.
-   * On real LoL data (proxy prices) it cuts variance ≈ 5.6× for balanced games.
+   * On real LoL data (proxy prices, odds 1.5–5) it cuts variance ≈ 5.5–5.9×.
    * It is blind to edges the market never learns. Use it as an accelerator and an alarm, never as
      the only kill rule.
 5. **PBO judges the selection step, not the edge [confirmado: paper and simulation].**
@@ -98,7 +101,7 @@ otherwise the thresholds themselves become another thing you overfit.
 | 0 | **Freeze the protocol** | The list of every trial (models, feature sets, EV thresholds, variants you discarded), the metric, the bet rule, and the lockbox (the most recent ~20–30% of games, used **once**) | Changing the protocol after seeing the lockbox burns the lockbox: it becomes in-sample |
 | 1 | **Leakage audit** (§8) | Odds↔state timestamp check, whole-game-column check, gameid/series grouping, negative control | Any failure: fix the **pipeline**, restart from stage 0. Do not tweak the model. |
 | 2 | **Walk-forward predictions** | Expanding or rolling window by date. Train strictly before test. All rows of a gameid (15:00 and 20:00) and all maps of a series in the same fold. | Every later stage sees **only** these out-of-sample predictions |
-| 3 | **Information vs the price** (per model or per cluster average) | Encompassing regression; Δlog loss vs market; calibration of the edge. Needs the price at every checkpoint of **every** game, not only the games you bet. | c not > 0 after a multiple-testing adjustment (Holm, or BHY for FDR). 200 tests at 5% let ~10 noise models through. Realised ROI not rising with predicted EV. |
+| 3 | **Information vs the price** (per model or per cluster average) | Encompassing regression (a, b, c + joint test); Δlog loss vs market; calibration of the edge. Needs the price at every checkpoint of **every** game, not only the games you bet. | Kill if c is not > 0 after a multiple-testing adjustment (Holm, or BHY for FDR); 200 tests at 5% let ~10 noise models through. Exception: c ≈ 0 but (a, b) ≠ (0, 1), i.e. the price is miscalibrated. Then the edge is a simple recalibration of the price; keep *that* as the candidate and drop the complex model. Also kill if realised ROI does not rise with predicted EV. |
 | 4 | **Executable P&L** (per model) | Bets at obtainable prices (delay, rejections, suspensions, limits); profit per game; clustered t; drawdown; fractional-Kelly growth | Edge gone after realistic execution. Edge gone after dropping the top 1% most profitable bets. |
 | 5 | **Family gate** (over **all** candidates ever tried, not only survivors) | SPA and RC vs "no bet"; DSR of the candidate with honest N (§6). Filtering on stages 3–4 with the same data is itself selection, so a test run only on the survivors is optimistic. | SPA p ≥ 0.05: **no model goes live**. The family has not shown any edge. |
 | 6 | **Selection inside the family** | MCS (90%, range statistic) on log loss or −profit. PBO/CSCV as a diagnostic of the *selection step*. | Outside the MCS: drop. If the MCS is small, average its members. If it keeps nearly everything (as in §6), the data cannot choose: take the pre-specified or simplest model and treat it as **unvalidated** until stage 8. Never the in-sample argmax. |
@@ -114,7 +117,7 @@ Scale up only when the **live sample on its own** supports the edge. Adding it t
 | Question | Metric / test | Use as | Notes |
 |---|---|---|---|
 | Is the probability good in absolute terms? | Log loss, Brier (= RPS for 2 outcomes), calibration slope/intercept, reliability curve | diagnostic | Accuracy/AUC ignore calibration; don't select betting models on them [confirmado]. |
-| Does the model know something **the price doesn't**? | **Encompassing regression** (Fair–Shiller / Benter style): `logit P(y)=a+b·logit(q)+c·[logit(p)−logit(q)]`, SE clustered by game | **primary kill rule** | c > 0 ⇔ information beyond the price. |
+| Does the model know something **the price doesn't**? | **Encompassing regression** (Fair–Shiller / Benter style): `logit P(y)=a+b·logit(q)+c·[logit(p)−logit(q)]`, SE clustered by game | **primary gate** | c > 0: information beyond any logit-linear recalibration of the price. (a, b) ≠ (0, 1): the price itself is miscalibrated (e.g. favourite–longshot bias). That edge shows in b, **not** in c [confirmado in `test_toolkit.py`: b = 1.40, c = 0.03]. |
 | Same question, stand-alone | Paired Δlog loss (model − de-vigged market), SE clustered by game (Diebold–Mariano-type) | diagnostic | Not a kill rule: a model can be worse than the market overall and still add information (Hubáček & Šír 2023) [confirmado]. |
 | Is the edge estimate itself calibrated? | Bucket bets by predicted EV; realised ROI should rise with predicted EV | kill / recalibrate | Tests the *edge*, not just the probability [especulação: my rule]. |
 | Does the betting rule make money after margin and execution? | Profit per game, ROI per bet, t-stat clustered by game, max drawdown, log-growth at fractional Kelly | final judge | Needs thousands of bets (§7). |
@@ -150,21 +153,35 @@ at bet time. By the tower property:
 That lower variance is why CLV is used at all.
 
 **How much faster, on real LoL data [provável for the magnitude; proxy prices].**
-`lol_resolution_check.py` fits win probability at 15:00 and at 20:00 on 2022 and tests on 17,578
+
+`lol_resolution_check.py` fits win probability at 15:00 and at 20:00 on 2022 and tests on 17,677
 games from 2023–24.
+* 163 of them ended before 20:00. For those, the "20:00 price" is the result.
+* Dropping them would have used end-of-game information.
 
-| Measure | 15:00 | 20:00 |
+| Measure | 15:00 | 20:00 (games still live) |
 |---|---|---|
-| Accuracy | 74.1% | 79.6% |
-| Mean predicted p vs Blue win rate 0.530 | 0.532 | 0.534 |
-| E[q(1−q)] (variance left in the outcome) | 0.176 | — |
+| Accuracy | 74.3% | 79.6% |
+| Mean predicted p vs Blue win rate 0.531 | 0.532 | — |
 
-* The 15:00→20:00 price move has E[(q20−q15)²] = 0.029.
-* At fair odds, Var(profit)/Var(markout at 20:00) for a 15:00 bet:
-  * **≈ 5.6×** for balanced games (0.3 < q15 < 0.7);
-  * **≈ 12.8×** over all games.
-* So you would need roughly **5–6× fewer bets** to reach the same t-stat, *if* the conditions below
-  hold.
+* The 15:00→20:00 price move has E[(q20−q15)²] = 0.029. The variance left in the outcome at 15:00 is
+  E[q15(1−q15)] = 0.175.
+* Var(profit)/Var(markout at 20:00) for a 15:00 bet at fair odds:
+
+  | Odds range | Ratio |
+  |---|---|
+  | 1.5–3.0 | **≈ 5.5×** |
+  | ≤ 5 (82% of sides) | **≈ 5.9×** |
+  | all sides | 15.7×, but misleading |
+
+  * The "all sides" figure is driven by longshots. Sides priced q < 0.1 are 7.9% of sides but carry
+    70.7% of the profit variance.
+* So for the prices you actually bet, you need roughly **5–6× fewer bets** to reach the same t-stat,
+  *if* the conditions below hold.
+* **These proxies are not perfect martingales.**
+  * The identity E[q15(1−q15)] = E[dq²] + E[(y−q20)²] is off by 0.006 (SE 0.001).
+  * The 15:00 proxy is slightly under-confident: Brier 0.171 vs E[q(1−q)] 0.175.
+  * Treat 5–6× as an order of magnitude.
 
 **When it fails (simulation, EXP-6).**
 
@@ -441,8 +458,9 @@ To use the toolkit on your data, build:
   * The bootstrap here resamples games iid. If games on the same day or patch are dependent, use
     `mean_block > 1` with games sorted by time.
 * **Markout magnitude.**
-  * The real-data ratio (5.6× for balanced games) uses *proxy* prices from a gold/xp/kills logistic
-    model, not real odds.
+  * The real-data ratio (≈ 5.5–5.9× at odds 1.5–5) uses *proxy* prices from a gold/xp/kills logistic
+    model, not real odds. Those proxies are not perfect martingales (a 0.006 gap in the variance
+    identity).
   * Real market prices contain more information (draft, team strength), so the true ratio can differ
     in either direction.
   * Measure `Var(profit) / Var(markout)` on your own logged odds.
