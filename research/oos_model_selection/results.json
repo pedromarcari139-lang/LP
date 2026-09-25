@@ -847,5 +847,236 @@
     }
    ]
   }
+ },
+ "exp7_blend": [
+  {
+   "public_info_error_var": 0.0,
+   "raw_roi": 0.028597109835128975,
+   "raw_roi_se": 0.00131460240032233,
+   "blend_roi": 0.04688077065032619,
+   "blend_roi_se": 0.004330912392604092,
+   "raw_bet_rate": 0.21026424999999999,
+   "blend_bet_rate": 0.11565099999999999,
+   "encompassing_power_2000_games": 0.574
+  },
+  {
+   "public_info_error_var": 0.005,
+   "raw_roi": -0.007156711391677237,
+   "raw_roi_se": 0.0010147961017848604,
+   "blend_roi": 0.031169757018088322,
+   "blend_roi_se": 0.01683528067295604,
+   "raw_bet_rate": 0.33041924999999994,
+   "blend_bet_rate": 0.06702375,
+   "encompassing_power_2000_games": 0.342
+  },
+  {
+   "public_info_error_var": 0.02,
+   "raw_roi": -0.025888231392212597,
+   "raw_roi_se": 0.0006924523064295025,
+   "blend_roi": 0.004148685843781948,
+   "blend_roi_se": 0.019615701445246388,
+   "raw_bet_rate": 0.47592300000000015,
+   "blend_bet_rate": 0.0210645,
+   "encompassing_power_2000_games": 0.186
+  }
+ ],
+ "exp8_gates_n2000": {
+  "clones_no_edge": {
+   "info_gate_reject": 0.025,
+   "spa_reject": 0.0,
+   "n_significant": 0.145,
+   "n_significant_informative": 0.0,
+   "any_uninformative_significant": 0.025,
+   "gate_go_with_info": 0.0,
+   "gate_go_without_info": 0.025,
+   "true_roi_gate_pick": -0.04761904761904767,
+   "pick_sharpe_informative": 0.0,
+   "true_roi_pick_sharpe": -0.04761904761904767,
+   "median_true_roi_pick_sharpe": -0.04761904761904767,
+   "gate_went": 5,
+   "replications": 200
+  },
+  "grid_no_edge": {
+   "info_gate_reject": 0.05,
+   "spa_reject": 0.005,
+   "n_significant": 2.625,
+   "n_significant_informative": 0.0,
+   "any_uninformative_significant": 0.05,
+   "gate_go_with_info": 0.0,
+   "gate_go_without_info": 0.05,
+   "true_roi_gate_pick": -0.04761904761904767,
+   "pick_sharpe_informative": 0.0,
+   "true_roi_pick_sharpe": -0.04761904761904767,
+   "median_true_roi_pick_sharpe": -0.04761904761904767,
+   "gate_went": 10,
+   "replications": 200
+  },
+  "clones_same_real_edge": {
+   "info_gate_reject": 0.54,
+   "spa_reject": 0.08,
+   "n_significant": 51.915,
+   "n_significant_informative": 51.915,
+   "any_uninformative_significant": 0.0,
+   "gate_go_with_info": 0.545,
+   "gate_go_without_info": 0.0,
+   "true_roi_gate_pick": 0.02773418611935402,
+   "pick_sharpe_informative": 1.0,
+   "true_roi_pick_sharpe": 0.027734186119354024,
+   "median_true_roi_pick_sharpe": 0.02773418611935402,
+   "gate_went": 109,
+   "replications": 200
+  },
+  "grid_20_of_200_real": {
+   "info_gate_reject": 0.385,
+   "spa_reject": 0.025,
+   "n_significant": 4.9,
+   "n_significant_informative": 4.165,
+   "any_uninformative_significant": 0.055,
+   "gate_go_with_info": 0.385,
+   "gate_go_without_info": 0.005,
+   "true_roi_gate_pick": 0.03387924778939215,
+   "pick_sharpe_informative": 0.56,
+   "true_roi_pick_sharpe": 0.0021950342784300683,
+   "median_true_roi_pick_sharpe": 0.01660213196680132,
+   "gate_went": 78,
+   "replications": 200
+  }
+ },
+ "exp8_gates_n10000": {
+  "clones_no_edge": {
+   "info_gate_reject": 0.04,
+   "spa_reject": 0.0,
+   "n_significant": 0.46,
+   "n_significant_informative": 0.0,
+   "any_uninformative_significant": 0.04,
+   "gate_go_with_info": 0.0,
+   "gate_go_without_info": 0.04,
+   "true_roi_gate_pick": -0.04761904761904767,
+   "pick_sharpe_informative": 0.0,
+   "true_roi_pick_sharpe": -0.047619047619047665,
+   "median_true_roi_pick_sharpe": -0.04761904761904767,
+   "gate_went": 4,
+   "replications": 100
+  },
+  "grid_no_edge": {
+   "info_gate_reject": 0.08,
+   "spa_reject": 0.0,
+   "n_significant": 2.44,
+   "n_significant_informative": 0.0,
+   "any_uninformative_significant": 0.08,
+   "gate_go_with_info": 0.0,
+   "gate_go_without_info": 0.08,
+   "true_roi_gate_pick": -0.04761904761904767,
+   "pick_sharpe_informative": 0.0,
+   "true_roi_pick_sharpe": -0.047619047619047665,
+   "median_true_roi_pick_sharpe": -0.04761904761904767,
+   "gate_went": 8,
+   "replications": 100
+  },
+  "clones_same_real_edge": {
+   "info_gate_reject": 0.99,
+   "spa_reject": 0.21,
+   "n_significant": 185.49,
+   "n_significant_informative": 185.49,
+   "any_uninformative_significant": 0.0,
+   "gate_go_with_info": 1.0,
+   "gate_go_without_info": 0.0,
+   "true_roi_gate_pick": 0.02773418611935402,
+   "pick_sharpe_informative": 1.0,
+   "true_roi_pick_sharpe": 0.027734186119354014,
+   "median_true_roi_pick_sharpe": 0.02773418611935402,
+   "gate_went": 100,
+   "replications": 100
+  },
+  "grid_20_of_200_real": {
+   "info_gate_reject": 0.97,
+   "spa_reject": 0.1,
+   "n_significant": 18.9,
+   "n_significant_informative": 18.51,
+   "any_uninformative_significant": 0.05,
+   "gate_go_with_info": 0.97,
+   "gate_go_without_info": 0.0,
+   "true_roi_gate_pick": 0.03572227910181826,
+   "pick_sharpe_informative": 0.87,
+   "true_roi_pick_sharpe": 0.02931621859254717,
+   "median_true_roi_pick_sharpe": 0.0375086090568365,
+   "gate_went": 97,
+   "replications": 100
+  }
+ },
+ "exp9_live": {
+  "break_even (no edge)": {
+   "sprt_scale": 0.0395,
+   "sprt_kill": 0.8545,
+   "sprt_undecided": 0.106,
+   "median_bets_to_decision": 2174.5,
+   "naive_t_above_1_645_at_any_check": 0.3975,
+   "naive_t_below_minus_1_645_at_any_check": 0.4585
+  },
+  "claim right (+5%)": {
+   "sprt_scale": 0.8435,
+   "sprt_kill": 0.0435,
+   "sprt_undecided": 0.113,
+   "median_bets_to_decision": 2229.5,
+   "naive_t_above_1_645_at_any_check": 0.961,
+   "naive_t_below_minus_1_645_at_any_check": 0.1565
+  },
+  "overconfident (claims +5%, true +2%)": {
+   "sprt_scale": 0.251,
+   "sprt_kill": 0.4365,
+   "sprt_undecided": 0.3125,
+   "median_bets_to_decision": 3357.5,
+   "naive_t_above_1_645_at_any_check": 0.677,
+   "naive_t_below_minus_1_645_at_any_check": 0.28
+  },
+  "losing (true -3%)": {
+   "sprt_scale": 0.001,
+   "sprt_kill": 0.997,
+   "sprt_undecided": 0.002,
+   "median_bets_to_decision": 1176.0,
+   "naive_t_above_1_645_at_any_check": 0.1935,
+   "naive_t_below_minus_1_645_at_any_check": 0.8205
+  },
+  "drop_top_1pct_kills_real_3pct_edge_share": {
+   "1.9": 0.173,
+   "2.5": 0.306,
+   "3.5": 0.439,
+   "5.0": 0.589
+  }
+ },
+ "exp10_sizes": {
+  "dsr": {
+   "0.0": {
+    "N_M": 0.0,
+    "N_hat": 0.0
+   },
+   "0.5": {
+    "N_M": 0.01625,
+    "N_hat": 0.0275
+   },
+   "0.7": {
+    "N_M": 0.02625,
+    "N_hat": 0.04875
+   },
+   "0.9": {
+    "N_M": 0.045,
+    "N_hat": 0.07
+   }
+  },
+  "spa_rare": {
+   "rates 0.5%-40%, no filter": {
+    "spa": 0.0775,
+    "rc": 0.06375
+   },
+   "rates 0.5%-40%, min 100 bets": {
+    "spa": 0.0625,
+    "rc": 0.0375
+   },
+   "rates 5%-40%, no filter": {
+    "spa": 0.07875,
+    "rc": 0.03875
+   }
+  },
+  "replications": 800
  }
 }

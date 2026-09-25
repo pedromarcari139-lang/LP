@@ -105,8 +105,8 @@ def deflated_sharpe(x_selected, sr_all_trials, n_trials=None):
     of SRs given), with the cross-sectional variance of their SRs (always used).
     That variance already shrinks when trials are correlated, so shrinking N
     too (e.g. with `implied_independent_trials`) counts the correlation twice:
-    200 trials, correlation 0.9, true SR 0 -> 8.5% false positives at a nominal
-    5% with N_hat vs 4.2% with N = M (README §6)."""
+    200 trials, correlation 0.9, true SR 0 -> 7.0% false positives at a nominal
+    5% with N_hat vs 4.5% with N = M (EXP-10 in simulate.py)."""
     sr_all = np.asarray(sr_all_trials, float)
     n = sr_all.size if n_trials is None else n_trials
     sr0 = expected_max_sr(n, sr_all.var(ddof=1))
@@ -220,10 +220,11 @@ def spa_vs_no_bet(R, reps=1000, mean_block=1.0, seed=None, min_bets=100):
     bootstrapped jointly, so correlation between models is handled
     automatically (no effective-N guess needed).
 
-    min_bets: candidates with fewer bets are dropped before testing. Studentizing
-    the mean of ~10 skewed bets over-rejects: at zero EV, 200 candidates with
-    bet rates from 0.5% to 40% at fixed short-to-long odds gave 9.4% rejections
-    at a nominal 5% (5.8% when every candidate bet on >= 5% of 2,000 games).
+    min_bets: candidates with fewer bets are dropped before testing.
+    Studentizing the mean of a few skewed bets over-rejects, and the filter
+    only partly helps. EXP-10 (zero EV, 200 candidates at fixed odds 1.4-5.0,
+    2,000 games, nominal 5%): SPA 7.8% without the filter, 6.3% with it, 7.9%
+    when every candidate bet on >= 5% of games; the RC stayed at 3.8-6.4%.
 
     test_toolkit.py checks the SPA against a literal re-implementation and the
     RC against arch. arch 8.0's SPA does not studentize, and its variance loop

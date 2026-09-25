@@ -3,306 +3,406 @@
 Scope: ~200 similar models, live binary markets at fixed game-clock timestamps (15:00, 20:00),
 no closing line available. What to compute, in what order, and when to kill a model or an edge.
 
-Evidence used here:
-* `oos_toolkit.py`: reference implementations, checked by `test_toolkit.py` against known answers:
-  * the SPA against a literal re-implementation of Hansen (2005);
-  * the RC and the MCS against the `arch` package. `arch` 8.0's SPA does not studentize (source read),
-    so it cannot check the SPA itself.
-* `simulate.py`: synthetic world, which gives the numbers in sections 5–7 (`results.json`).
-* `lol_resolution_check.py`: real pro-LoL data (Oracle's Elixir 2022–24), used in section 5.
-* A literature check (primary sources where reachable; see References).
+**Evidence behind this file**
 
-Tags: **[confirmado]** = source read or computed here · **[provável]** = well supported, not fully verified ·
-**[especulação]** = my estimate or proposal · **[não sei]** = unknown.
+* **Code.** `oos_toolkit.py` holds the reference implementations. `test_toolkit.py` checks them
+  against known answers:
+  * SPA against a literal re-implementation of Hansen (2005);
+  * RC and MCS against the `arch` package;
+  * the sizes of the tests, and the SPRT under checking after every bet.
+* **Simulation.** `simulate.py` builds a synthetic world. Its numbers (sections 1, 3–8) come from
+  `results.json`.
+* **Real data.** `lol_resolution_check.py` uses pro-LoL games from Oracle's Elixir 2022–24.
+  * The §6 numbers come from `lol_resolution_check.out`.
+  * The §9 counts come from the same data.
+* **Test outputs.** A few figures come from the output of `test_toolkit.py` and are marked as such.
+* **Literature.** Checked in primary sources where reachable; see References.
+* **Reviews.** Two independent hostile reviews (one of the code, one of this text) found errors in
+  an earlier version. Their findings are fixed here.
+
+**Tags:**
+* **[confirmado]**: source read, or computed here.
+* **[provável]**: well supported, not fully verified.
+* **[especulação]**: my estimate or proposal.
+* **[não sei]**: unknown.
+
+"Confirmed in simulation" means true **in that synthetic world**, not necessarily in yours.
 
 ---
 
 ## 1. Bottom line
 
 1. **No rule guarantees out-of-sample performance [confirmado].**
-   * PBO, DSR, SPA and the bootstrap only *estimate or penalise* selection bias.
+   * PBO, DSR, SPA and bootstraps only *estimate or penalise* selection bias.
    * The only real out-of-sample data is data nobody looked at while choosing: a lockbox used once,
-     then a live forward test.
-2. **With 200 near-identical models, "which one is best" is not answerable from the data.**
-   * [confirmado in simulation] Even with 10,000 games, the Model Confidence Set kept 97–100% of the
-     models, and the in-sample best overstated its ROI by +5 to +35 pp.
-   * [provável, my inference] Test the *family*. Then choose by what you pre-specified, by simplicity
-     and by robustness, never by the in-sample argmax.
-   * Average only near-duplicates of the same idea: averaging a set that is 90% noise dilutes the signal.
-3. **The first gate is information versus the price at bet time, not ROI and not accuracy.**
-   * [confirmado in simulation] An encompassing regression detected a real +3.6%-ROI edge 56% of the
-     time with 2,000 games. An ROI t-test detected it 7% of the time, and 21% even at 10,000.
-   * [provável] Using it as the gate is my recommendation; Benter (1994) is the published precedent
-     for combining the model with the public price.
-4. **You can have a live CLV: the markout [confirmado: the math; provável: the magnitude].**
-   * Re-price each bet at a later fair price, e.g. the 20:00 price for a 15:00 bet.
-   * On real LoL data (proxy prices, odds 1.5–5) it cuts variance ≈ 5.5–5.9×.
-   * It is blind to edges the market never learns. Use it as an accelerator and an alarm, never as
-     the only kill rule.
-5. **PBO judges the selection step, not the edge [confirmado: paper and simulation].**
+     then live bets.
+2. **With 200 similar models, P&L cannot tell you whether any of them has an edge
+   [confirmado in simulation].**
+   * A real +2.8% edge shared by 200 clones, with 10,000 games, was detected only part of the
+     time: SPA 29%, RC 26%, DSR 25%.
+   * The Model Confidence Set kept 183–200 of the 200 models (medians) in every world.
+3. **Test *information* instead: does a model know something the price doesn't?**
+   * [confirmado in simulation] The family **information gate** (§3, stage 3) detected that same edge:
+     * 54% of the time with 2,000 games;
+     * 99% with 10,000 games;
+     * with 2.5%–8.0% false positives in the no-information worlds (nominal 5%).
+   * [provável] It should decide whether *any* model goes forward. P&L tests become reports.
+4. **Choosing the argmax is fine; believing its backtest is not [confirmado in simulation].**
+   * The in-sample best overstated its ROI by +2 to +44 pp.
+   * Choose with a rule fixed in advance (the largest information statistic among the models that
+     pass the gate). Then *measure* its edge on the lockbox.
+5. **Bet the blend of model and price, not the raw model [confirmado in simulation; Benter 1994].**
+   * Betting the walk-forward blend instead of the raw model raised ROI per bet:
+     * from +2.9% to +4.7% (± 0.4) when the model read public information perfectly;
+     * from -2.6% to +0.4% (± 2.0) when it misread it.
+   * Mostly by betting less. In the second case the blend's profit is uncertain, but it avoided the
+     loss.
+6. **A live CLV exists, the markout, but it accelerates; it does not judge
+   [confirmado: the math; provável: the magnitude].**
+   * On real LoL prices (proxies) it has ≈ 5.5–5.9× less variance than P&L.
+   * It is blind to edges the market never learns.
+   * Finding out which kind of edge you have takes as many bets as P&L does.
+7. **Monitor live bets with a test that survives being checked after every bet
+   [confirmado in simulation].**
+   * A t-test checked after every bet "found" an edge in 40% of break-even bettors.
+   * Wald's SPRT between break-even and your claimed probabilities, valid by Ville's inequality,
+     did so in 4.0%.
+8. **PBO judges the selection step, not the edge [confirmado: paper and simulation].**
    * Among near-clones it is ≈ 0.5 with or without a real edge.
-   * It can be lower in a world where everything loses.
-6. **P&L alone cannot validate 200 candidates at LoL sample sizes
-   [confirmado: arithmetic and simulation].**
-   * A 3% edge at odds 1.9 needs ~4,000 independent bets for t = 2, and ~18,600 for 80% power after a
-     Bonferroni correction for 200.
-   * The corrected tests (SPA, RC, DSR) kept false positives ≤ 3%, but detected a real +3.6% edge only
-     16–42% of the time at 10,000 games.
-7. **Therefore:**
-   * cut the candidate list *before* testing: pre-specify, cluster, and average only near-duplicates;
-   * gate on information vs the price;
-   * use markouts for speed;
-   * count every trial for DSR and SPA;
-   * let the lockbox and a live forward test make the final call.
+   * It was lower in a world where everything loses (0.35) than in one with a real edge
+     (0.52).
 
 ---
 
 ## 2. What is publicly known about how betting quants validate
 
 * **[não sei]** How syndicates validate internally. None of them publish it.
-* **[confirmado]** Benter (1994), horse racing. He did not bet his model raw. He fitted a logit that
-  **combined his model with the public's odds**, and judged the model by how much it improved on the
-  odds alone. Reported pseudo-R²: public 0.1218, model 0.1245, combined 0.1396 (the numbers are from a
-  secondary source).
-* **[confirmado]** Pinnacle and Buchdahl treat CLV (beating the closing price) as the best indicator of
-  skill.
-* **[provável]** Buchdahl: CLV evidence becomes significant in far fewer bets than P&L, because its
-  variance is much lower (secondary source).
-* **[confirmado]** I found no documented, established "in-play CLV" metric.
+* **[confirmado]** Benter (1994), horse racing, did not bet his model raw.
+  * He fitted a logit that **combined his model with the public's odds**.
+  * He judged the model by how much it improved on the odds alone.
+  * **[provável]** Reported pseudo-R²: public 0.1218, model 0.1245, combined 0.1396. The numbers
+    are from a secondary source.
+* **[confirmado]** Pinnacle and Buchdahl treat CLV (beating the closing price) as the best indicator
+  of skill.
+  * **[provável]** Buchdahl: CLV evidence reaches significance in far fewer bets than P&L, because
+    its variance is much lower (secondary source).
+* **[não sei]** Whether an established "in-play CLV" metric exists. The literature search found none.
 * **[confirmado]** Accuracy is not profitability:
   * Wunderlich & Memmert (2020).
-  * Hubáček, Šourek & Železný (2019): a model that is accurate but correlated with the bookmaker loses.
-  * Hubáček & Šír (2023): a model worse than the market can still profit if it is decorrelated from it.
+  * Hubáček, Šourek & Železný (2019): a model that is accurate but correlated with the bookmaker
+    loses.
+  * Hubáček & Šír (2023): a model worse than the market can still profit if decorrelated from it.
   * Walsh & Joshi (2024): selecting by calibration beat selecting by accuracy.
-    * **A 2025 corrigendum changed all their numbers** (a feature-engineering bug).
-    * According to a secondary summary of the corrigendum, the direction still holds [provável].
-      Cite the direction, not the figures.
+    * A 2025 corrigendum changed all their numbers (a feature-engineering bug).
+    * [provável] According to a secondary summary, the direction still holds.
 * **[confirmado]** From quant finance, for selection among many backtests:
   * White's Reality Check (2000).
   * Hansen's SPA (2005).
   * Romano–Wolf StepM (2005).
-  * Hansen–Lunde–Nason's Model Confidence Set (2011).
-  * Bailey & López de Prado's PSR/DSR (2012/2014).
-  * PBO/CSCV (Bailey, Borwein, López de Prado & Zhu, 2017).
-  * Harvey–Liu–Zhu's t > 3 hurdle (2016).
-* **[provável]** How many firms actually apply these, and how strictly. Nobody publishes it.
+  * The Model Confidence Set (2011).
+  * PSR/DSR (2012/2014).
+  * PBO/CSCV (2017).
+  * The t > 3 hurdle (Harvey–Liu–Zhu 2016).
+* **[não sei]** How many firms actually apply these.
 
 ---
 
 ## 3. The funnel
 
-Run the stages in order. A model that fails a stage never reaches the next one.
+Run the stages in order. **Thresholds are conventions I propose [especulação].** Fix them before
+looking at any result, or they become one more thing you overfit.
 
-**Thresholds are conventions I propose [especulação]. Fix them BEFORE you look at the results**,
-otherwise the thresholds themselves become another thing you overfit.
-
-| # | Stage | What you compute | Kill rule (proposed defaults) |
+| # | Stage | What you compute | Rule (proposed defaults) |
 |---|---|---|---|
-| 0 | **Freeze the protocol** | The list of every trial (models, feature sets, EV thresholds, variants you discarded), the metric, the bet rule, and the lockbox (the most recent ~20–30% of games, used **once**) | Changing the protocol after seeing the lockbox burns the lockbox: it becomes in-sample |
-| 1 | **Leakage audit** (§8) | Odds↔state timestamp check, whole-game-column check, gameid/series grouping, negative control | Any failure: fix the **pipeline**, restart from stage 0. Do not tweak the model. |
-| 2 | **Walk-forward predictions** | Expanding or rolling window by date. Train strictly before test. All rows of a gameid (15:00 and 20:00) and all maps of a series in the same fold. | Every later stage sees **only** these out-of-sample predictions |
-| 3 | **Information vs the price** (per model or per cluster average) | Encompassing regression (a, b, c + joint test); Δlog loss vs market; calibration of the edge. Needs the price at every checkpoint of **every** game, not only the games you bet. | Kill if c is not > 0 after a multiple-testing adjustment (Holm, or BHY for FDR); 200 tests at 5% let ~10 noise models through. Exception: c ≈ 0 but (a, b) ≠ (0, 1), i.e. the price is miscalibrated. Then the edge is a simple recalibration of the price; keep *that* as the candidate and drop the complex model. Also kill if realised ROI does not rise with predicted EV. |
-| 4 | **Executable P&L** (per model) | Bets at obtainable prices (delay, rejections, suspensions, limits); profit per game; clustered t; drawdown; fractional-Kelly growth | Edge gone after realistic execution. Edge gone after dropping the top 1% most profitable bets. |
-| 5 | **Family gate** (over **all** candidates ever tried, not only survivors) | SPA and RC vs "no bet"; DSR of the candidate with honest N (§6). Filtering on stages 3–4 with the same data is itself selection, so a test run only on the survivors is optimistic. | SPA p ≥ 0.05: **no model goes live**. The family has not shown any edge. |
-| 6 | **Selection inside the family** | MCS (90%, range statistic) on log loss or −profit. PBO/CSCV as a diagnostic of the *selection step*. | Outside the MCS: drop. If the MCS is small, average its members. If it keeps nearly everything (as in §6), the data cannot choose: take the pre-specified or simplest model and treat it as **unvalidated** until stage 8. Never the in-sample argmax. |
-| 7 | **Robustness** | Stability across time blocks, leagues, patches, timestamps, favourite/underdog, odds bands; parameter plateau | The edge lives in one slice that you did not pre-specify. The pick is an isolated spike among its neighbours. |
-| 8 | **Lockbox, then live** | One run on the lockbox with the pre-registered criterion; then small-stake live with full logging (requested vs obtained odds, rejections, later prices for markouts) | Lockbox fails: stop. Live: cumulative P&L below the 5th percentile of the P&L you simulated from the claimed edge; markouts significantly negative; fill rate collapses. |
-
-Scale up only when the **live sample on its own** supports the edge. Adding it to the backtest does not count.
+| 0 | **Freeze the protocol** | The list of every trial ever run (models, feature sets, EV thresholds, discarded variants), metrics, bet rule. The lockbox: the most recent ~20–30% of games, used **once**. Its pass criterion and that criterion's power at the lockbox size. | Changing anything after seeing the lockbox burns it: it becomes in-sample |
+| 1 | **Leakage audit** (§9) | Odds↔state timestamp alignment; as-of assertion on every feature; canary column; synthetic-outcome control | Any failure: fix the **pipeline**, restart at stage 0 |
+| 2 | **Walk-forward predictions** | Train strictly before test. All rows of a game (15:00 and 20:00) and all maps of a series in one fold. Store the price at every checkpoint of **every** game, not only the games you bet. | Every later stage uses only these predictions |
+| 3 | **Family information gate** (all candidates, not survivors) | `information_gate`: max-t over all models of the encompassing score for c, with the price's own bias (a, b) partialled out, multiplier bootstrap by game or series. Also fit (a, b): a miscalibrated price is an edge on its own. | Family p ≥ 0.05: **stop, nothing goes forward.** Otherwise keep only models significant with family-wise error control. |
+| 4 | **Blend and executable EV** (per survivor) | Fit the blend `a + b·logit q + c·(logit p − logit q)` on past games only; compute EVs with the **blend**; apply delays, rejections, suspensions, limits and an odds cap; profit per game, clustered t, drawdown, fractional Kelly on the blend | Kill if the blend's average EV at the prices you can actually get is ≤ 0. Realised P&L is reported with its CI; at these sizes it cannot confirm an edge. |
+| 5 | **Reports, not vetoes** | SPA/RC on P&L, DSR with N = all trials, PBO and probability of loss, MCS | Veto only if the family's P&L is significantly **negative** after execution |
+| 6 | **Choose** | Among the gate's significant models: the largest information t, or the simplest one within noise of it (fixed in stage 0). Average only near-duplicates of one idea. | Never use the pick's backtest ROI as its expected ROI |
+| 7 | **Robustness** | Sign of the information statistic across time blocks, leagues, patches, 15:00 vs 20:00, favourite/underdog, odds bands; parameter plateau; audit the prices of the top-1% contributing bets | Edge lives in one slice you did not pre-specify. Pick is an isolated spike. A top bet sits on a wrong price (Clegg & Cartlidge 2025). |
+| 8 | **Lockbox** | One run of the one chosen model, with the stage-0 criterion. Use an information criterion (encompassing c, or the blend's log-loss gain): in EXP-5 a P&L criterion on 2,000 games detected a real edge 11% of the time, against 56% for the information test. | Fails: stop |
+| 9 | **Live** | Small stakes. SPRT between break-even (1/odds) and the blend's claimed probability, checked as often as you like. Log every attempt: requested vs obtained odds, rejections, later prices for markouts. | Scale up when the SPRT crosses 1/α = 20. Kill when it crosses β = 0.05. Markouts are an early warning, **never** a kill rule. |
 
 ---
 
-## 4. Metrics and scorers: what each one answers
+## 4. Why information and not P&L: power, sizes and the family gate
 
-| Question | Metric / test | Use as | Notes |
-|---|---|---|---|
-| Is the probability good in absolute terms? | Log loss, Brier (= RPS for 2 outcomes), calibration slope/intercept, reliability curve | diagnostic | Accuracy/AUC ignore calibration; don't select betting models on them [confirmado]. |
-| Does the model know something **the price doesn't**? | **Encompassing regression** (Fair–Shiller / Benter style): `logit P(y)=a+b·logit(q)+c·[logit(p)−logit(q)]`, SE clustered by game | **primary gate** | c > 0: information beyond any logit-linear recalibration of the price. (a, b) ≠ (0, 1): the price itself is miscalibrated (e.g. favourite–longshot bias). That edge shows in b, **not** in c [confirmado in `test_toolkit.py`: b = 1.40, c = 0.03]. |
-| Same question, stand-alone | Paired Δlog loss (model − de-vigged market), SE clustered by game (Diebold–Mariano-type) | diagnostic | Not a kill rule: a model can be worse than the market overall and still add information (Hubáček & Šír 2023) [confirmado]. |
-| Is the edge estimate itself calibrated? | Bucket bets by predicted EV; realised ROI should rise with predicted EV | kill / recalibrate | Tests the *edge*, not just the probability [especulação: my rule]. |
-| Does the betting rule make money after margin and execution? | Profit per game, ROI per bet, t-stat clustered by game, max drawdown, log-growth at fractional Kelly | final judge | Needs thousands of bets (§7). |
-| Early evidence without waiting for outcomes | Markout at t+Δ (live CLV analogue, §5) | accelerator, **not a veto** | Blind to "persistent" edges [confirmado in simulation]. |
-| Skill or luck, given how much I tried? | SPA / RC (family vs no-bet), DSR with honest N, MCS (set of indistinguishable models), PBO + probability of loss + degradation | family gate / selection | Count every trial ever run [confirmado: PBO paper]. |
-| Is it robust? | Sign/size stable across time blocks, leagues, patches, 15:00 vs 20:00, favourite/underdog, odds bands; parameter plateau; drop-top-1%-bets test | kill | [especulação: thresholds are mine]. |
-| Can I actually get the price? | Fill rate, rejection rate, obtained vs requested odds, delay-adjusted backtest | kill | Live bets get delayed and rejected [confirmado]. |
+**Power of three tests for the SAME real edge [confirmado in simulation].** One model, true ROI
++2.8%, one-sided 5%, 1,000 replications (EXP-5).
+
+| Games | ROI t-test | Δlog loss vs market | Encompassing, c > 0 | Encompassing, joint |
+|---|---|---|---|---|
+| 500 | 6.3% | 8.5% | 24.0% | 11.1% |
+| 1,000 | 8.9% | 8.9% | 37.9% | 15.8% |
+| 2,000 | 10.7% | 11.0% | 56.3% | 28.6% |
+| 5,000 | 15.7% | 18.7% | 87.9% | 66.8% |
+| 10,000 | 26.1% | 31.2% | 99.6% | 95.1% |
+
+* With no edge, the encompassing test for c rejected 4.0%–6.6% of the time and the joint
+  test 4.6%–5.7% (nominal 5%).
+* The encompassing test uses **every game**, not just the games you bet, and the full probability,
+  not just win/lose.
+* It proves *information*, not profit after margin and execution. That is why stage 4 exists.
+* Encompassing coefficients:
+  * c > 0 means information beyond any logit-linear recalibration of the price.
+  * An edge that is only a recalibration of the price (e.g. a favourite–longshot bias) shows up in b,
+    **not** in c. In `test_toolkit.py`: b = 1.40, c = 0.03 (p = 0.28), joint p ≈ 0.
+  * A wrong de-vig can also create c > 0, so treat c > 0 as a signal to investigate, not as proof.
+
+**Family gate on information vs family gate on P&L (EXP-8) [confirmado in simulation].**
+* Same replications for both gates.
+* "Declared significant" = any model *without* information passes the gate's family-wise control.
+* Funnel column: a model goes forward only if the gate rejects, and then it is the largest information
+  t; otherwise nothing is bet.
+* Sharpe column: what you get by always betting the in-sample Sharpe argmax.
+
+| World | Games | Information gate rejects | SPA on P&L rejects | A no-information model declared significant | Funnel (gate, then argmax of t): goes with an informative model / goes with a no-information model / true ROI of what goes | In-sample Sharpe argmax (always goes): has info / true ROI |
+|---|---|---|---|---|---|---|
+| clones, no edge (−margin) | 2,000 | 2.5% | 0.0% | 2.5% | 0.0% / 2.5% / -4.8% | 0% / -4.8% |
+| grid, no edge (−margin) | 2,000 | 5.0% | 0.5% | 5.0% | 0.0% / 5.0% / -4.8% | 0% / -4.8% |
+| clones, same real edge | 2,000 | 54.0% | 8.0% | 0.0% | 54.5% / 0.0% / +2.8% | 100% / +2.8% |
+| grid, 20 of 200 real | 2,000 | 38.5% | 2.5% | 5.5% | 38.5% / 0.5% / +3.4% | 56% / +1.7% |
+| clones, no edge (−margin) | 10,000 | 4.0% | 0.0% | 4.0% | 0.0% / 4.0% / -4.8% | 0% / -4.8% |
+| grid, no edge (−margin) | 10,000 | 8.0% | 0.0% | 8.0% | 0.0% / 8.0% / -4.8% | 0% / -4.8% |
+| clones, same real edge | 10,000 | 99.0% | 21.0% | 0.0% | 100.0% / 0.0% / +2.8% | 100% / +2.8% |
+| grid, 20 of 200 real | 10,000 | 97.0% | 10.0% | 5.0% | 97.0% / 0.0% / +3.6% | 87% / +3.8% |
+
+* False positives of the information gate in the no-information worlds:
+  * 2.5%–5.0% at 2,000 games;
+  * 4.0%–8.0% at 10,000 games (100–200 replications; SE 1.5–2.7 pp).
+  * Roughly nominal, possibly slightly liberal at 10k.
+* In the no-information worlds, every rejection is a wrong "go"; those are the false positives above.
+* In the world where only 20 of 200 models carry information, the gate almost never let a
+  no-information model through: ≤ 0.5% of replications.
+  * The in-sample Sharpe argmax always bets, and picked a model with no information
+    44% of the time at 2,000 games (grid, 20 of 200 real).
+* It finds real information that P&L cannot: 54% vs 8% (clones, 2,000 games).
+* **Its size depends on accounting for the price's own bias.**
+  * In `test_toolkit.py`, with a biased price and models leaning on logit q, the unadjusted score
+    rejected 90% of the time.
+  * The orthogonalised score rejected 3.5%.
+* The gate proves *some* model carries information. Whether that information survives the margin
+  and execution is stage 4.
 
 ---
 
-## 5. A live substitute for CLV: markouts
+## 5. Bet the blend, not the raw model (EXP-7) [confirmado in simulation]
+
+In the rest of the simulation every model reads the market's public information perfectly, which
+flatters the models (a hostile review pointed this out). Here the informative model also misreads
+public information, with the error variance in the first column. The blend is fitted on the 10,000
+previous games, then used to bet the next ones; 20 fits.
+
+| Error variance on public info | Encompassing detects it (2,000 games) | Raw model: ROI per bet ± SE | Walk-forward blend: ROI per bet ± SE |
+|---|---|---|---|
+| 0.0 | 57.4% | +2.9% ± 0.1 (bets on 21% of games) | +4.7% ± 0.4 (bets on 11.6% of games) |
+| 0.005 | 34.2% | -0.7% ± 0.1 (bets on 33% of games) | +3.1% ± 1.7 (bets on 6.7% of games) |
+| 0.02 | 18.6% | -2.6% ± 0.1 (bets on 48% of games) | +0.4% ± 2.0 (bets on 2.1% of games) |
+
+* A model can carry real information (the gate still detects it) and still lose money on its own
+  probabilities, because its errors on public information cost more than its private edge earns.
+* The blend keeps the information and mostly discards the errors, betting only where both agree.
+  * That is why it bets on far fewer games.
+  * With poor public information, its profit estimate is uncertain (± ~2%), but it no longer loses
+    the way the raw model does.
+* This is Benter's (1994) practice, and it costs nothing to adopt.
+
+---
+
+## 6. A live substitute for CLV: markouts
 
 Your premise was "I can't use CLV because I bet live". Half right. There is no *closing* line for a
 15:00 bet, but CLV is one case of a general idea you **can** use: re-price the bet later.
 
 **Definition.** Back side s at odds `o` at 15:00. Take the market's de-vigged probability of s at a
-later moment t+Δ (20:00, or +1 min, +5 min). Then
+later moment t+Δ (+1 min, +5 min, 20:00). Then
 
 ```
 markout = o · q_s(t+Δ) − 1        (profit = o · y_s − 1)
 ```
 
-With the closing price as q_s, this is the usual CLV-based EV.
-
-**Why it works [confirmado: the math, given its assumptions].** Suppose q(t+Δ) is the exact
-conditional probability of the market at t+Δ, and that market already knows everything **you** knew
-at bet time. By the tower property:
-
-* `E[profit − markout | your info] = o · E[y − q(t+Δ) | your info] = 0`, so markout is **unbiased**
-  for your true EV.
-* `Var(profit) = Var(markout) + E[o² · q(t+Δ)·(1 − q(t+Δ))]`, so markout has **lower variance**.
-
-That lower variance is why CLV is used at all.
+**Why it works [confirmado: the math, under its assumptions].** Suppose q(t+Δ) is the exact
+conditional probability of a market that by then knows everything **you** knew at bet time.
+* `E[profit − markout | your info] = 0`: the markout is **unbiased** for your EV.
+* `Var(profit) = Var(markout) + E[o² · q(t+Δ)·(1 − q(t+Δ))]`: the markout has **lower variance**.
 
 **How much faster, on real LoL data [provável for the magnitude; proxy prices].**
-
-`lol_resolution_check.py` fits win probability at 15:00 and at 20:00 on 2022 and tests on 17,677
-games from 2023–24.
-* 163 of them ended before 20:00. For those, the "20:00 price" is the result.
-* Dropping them would have used end-of-game information.
-
-| Measure | 15:00 | 20:00 (games still live) |
-|---|---|---|
-| Accuracy | 74.3% | 79.6% |
-| Mean predicted p vs Blue win rate 0.531 | 0.532 | — |
-
-* The 15:00→20:00 price move has E[(q20−q15)²] = 0.029. The variance left in the outcome at 15:00 is
-  E[q15(1−q15)] = 0.175.
+`lol_resolution_check.py` fits win probability at 15:00 and at 20:00 on 2022, and tests on
+17,677 games from 2023–24.
+* 163 of those games ended before 20:00. Their "20:00 price" is the result. Dropping them
+  would use end-of-game information.
+* Accuracy: 74.3% at 15:00, and 79.6% at 20:00 on the games still live.
+* Mean predicted p at 15:00 is 0.532, against a Blue win rate of 0.531.
+* Variance: the 15:00→20:00 price move has E[(q20−q15)²] = 0.029, against
+  E[q15(1−q15)] = 0.175 left in the outcome.
 * Var(profit)/Var(markout at 20:00) for a 15:00 bet at fair odds:
 
-  | Odds range | Ratio |
+  | Fair odds | Ratio |
   |---|---|
-  | 1.5–3.0 | **≈ 5.5×** |
-  | ≤ 5 (82% of sides) | **≈ 5.9×** |
-  | all sides | 15.7×, but misleading |
+  | 1.5–3.0 | **5.5×** |
+  | ≤ 5 | **5.9×** |
+  | all sides | 15.7×, driven by longshots |
 
-  * The "all sides" figure is driven by longshots. Sides priced q < 0.1 are 7.9% of sides but carry
-    70.7% of the profit variance.
-* So for the prices you actually bet, you need roughly **5–6× fewer bets** to reach the same t-stat,
-  *if* the conditions below hold.
-* **These proxies are not perfect martingales.**
-  * The identity E[q15(1−q15)] = E[dq²] + E[(y−q20)²] is off by 0.006 (SE 0.001).
-  * The 15:00 proxy is slightly under-confident: Brier 0.171 vs E[q(1−q)] 0.175.
-  * Treat 5–6× as an order of magnitude.
+  Sides priced q < 0.1 are 7.9% of sides but carry 70.7% of the profit
+  variance.
+* **The proxies are not perfect martingales.**
+  * The identity E[q15(1−q15)] = E[dq²] + E[(y−q20)²] misses by 0.006 (SE 0.001).
+  * The 15:00 proxy is slightly under-confident: Brier 0.171 vs 0.175.
+  * Read ≈ 5–6× as an order of magnitude.
 
-**When it fails (simulation, EXP-6).**
+**When it fails (EXP-6) [confirmado in simulation].** The edge is built two ways with the same
+information content.
 
-The edge was built two ways in the simulation, each with the same information content.
+| World (1M games, odds ≤ 5) | Profit/bet ± SE | Markout/bet | Profit − markout ± SE | Var(profit)/Var(markout) | Detection at 2,000 games: profit vs markout |
+|---|---|---|---|---|---|
+| catch-up edge (market learns it by 20:00) | +3.0% ± 0.3 | +2.9% | +0.1% ± 0.3 | 7.0 | 10.1% vs 32.3% |
+| persistent edge (market never learns it) | +3.2% ± 0.3 | -4.6% | +7.9% ± 0.3 | 7.6 | 9.7% vs 0.0% |
+| no edge | -4.4% ± 0.4 | -4.7% | +0.3% ± 0.3 | 7.4 | 1.6% vs 0.0% |
 
-| World (1M games) | Profit/bet | Markout/bet | Profit − markout (± SE) | Var(profit)/Var(markout) | Bets for t = 2: profit vs markout | Detection at 2,000 games: profit vs markout |
-|---|---|---|---|---|---|---|
-| catch-up edge (market learns it by 20:00) | +3.1% | +3.6% | -0.5% ± 0.4% | 10.8 | 19,606 vs 1,320 | 7.5% vs 36.5% |
-| persistent edge (market never learns it) | +4.2% | -4.8% | +9.0% ± 0.4% | 11.7 | 9,975 vs never (mean < 0) | 8.1% vs 0.0% |
-| no edge | -3.9% | -4.8% | +1.0% ± 0.6% | 16.4 | — vs never (mean < 0) | 1.4% vs 0.0% |
-
-* **Catch-up edge.** The markout is unbiased: profit − markout ≈ 0.
-  * The variance ratio is ≈ 11×, so it needs ~11× fewer bets.
-  * The table's 19,606 vs 1,320 also reflects sampling noise in the profit mean (+3.1% ± 0.4%).
-* **Persistent edge.** The markout reads ≈ −margin on a **real** +4.2% edge.
-  * Used as a kill rule, it would have killed a winner.
-  * The residual test flags it (+9.0% ± 0.4%).
-* **Clustering, persistent world.** The same rule re-bet the same game at 20:00 in 88% of cases.
-  * Within-game return correlation was 0.58.
-  * The game-clustered SE was 1.19× the naive SE.
-
-**How to use it.**
-1. **Logging is required.** Store the price of both sides at +30 s, +1 min, +5 min, and at the next
-   checkpoint (20:00 for a 15:00 bet), for every bet *and* every non-bet.
-2. De-vig each snapshot.
-3. Report the mean markout with a t-stat clustered by game.
-4. **Also run the residual test:** the mean of `o·(y − q_later)` over your bets, with its SE.
-   * ≈ 0: the later market absorbs your information, and markouts can speak for P&L.
-   * Significantly > 0: your edge is "persistent" and markouts understate it.
-   * < 0: markouts overstate the edge. Danger.
-5. **Use markouts as an accelerator and an alarm, never as the only kill rule.** A persistent edge
-   (for example, better team-strength priors that the live book never learns) shows ~−margin
-   markouts while being real.
-6. If a sharper live book exists for your markets, its later price is a better reference than your
-   own book's [provável].
+* **Persistent edge** (e.g. better team-strength priors that the live book never learns): the
+  markout reads ≈ −margin on a real edge. The profit column is noise around the true ≈ +2.8%.
+  Killing on markouts would kill a winner.
+* **The residual test cannot tell the two cases apart at LoL sample sizes.** The residual is
+  `o·(y − q_later)`, the part of profit the markout does not see.
+  * Its variance is Var(profit) − Var(markout), ≈ 86% of the profit variance here.
+  * So it needs as many bets as P&L. The small SEs in the table come from a million games.
+* **Use markouts:**
+  * as an accelerator, when you have a structural reason to believe your edge is catch-up (you read
+    the game state before the price does);
+  * as an early warning.
+  * **Never as a kill rule.**
+* **Practicalities.**
+  * Log both sides' prices at several horizons after every bet *and* every non-bet: a markout curve.
+  * De-vig each snapshot. If the later price is 1.10/7.00, the choice of de-vig method moves the
+    underdog's probability by 1.89 pp (§9). That moves the markout of a bet taken at 3.50 by
+    3.5 × 1.89 ≈ 6.6 pp.
+  * Compare markouts on bet vs non-bet games: on a thin book your own bet may move the price.
+  * A game that ends before the horizon uses the result.
+  * A market suspended at the horizon uses the next open price.
+* **Clustering.** The rule re-bet the same game at 20:00 in 64% of cases, with a within-game
+  return correlation of 0.90. The game-clustered SE was 1.26× the naive one.
 
 ---
 
-## 6. Choosing among 200 near-identical models: what each tool really tells you
+## 7. Choosing among 200 near-identical models: what each tool tells you (EXP-2/3/4)
 
-**Setup (`simulate.py`, EXP-2/3/4).**
-* 200 candidate rules bet flat stakes at 15:00 against a calibrated market with a 5% margin.
-* Pairwise correlation of per-game P&L between candidates is 0.63–0.83.
-* Four worlds:
-  * **clones, no edge**: 200 copies of one rule with no information.
-  * **clones, same real edge**: 200 copies, each with a true ROI of +3.6%.
-  * **grid, no edge**: 50 signal weights × 4 EV thresholds, none with information.
-  * **grid, 20 of 200 real**: the same grid, 20 of them with real information.
+**Setup.**
+* 200 fixed rules bet flat stakes at 15:00, never at odds above 5.0, against a calibrated market.
+* Four kinds of world:
+  * **clones**: 200 copies of one rule;
+  * **grid**: 50 signal weights × 4 EV thresholds;
+  * **zero EV** (margin 0: no-information rules have EV exactly 0, so rejections are the tests'
+    real false-positive rates);
+  * **−margin** (margin 5%).
+* The informative rules have true ROI +0.7% to +8.5%, and the clones +2.8%.
 * The "pick" is the in-sample best per-game Sharpe, as in the PBO paper.
-* True ROI is measured on 200k fresh games.
+* The true ROI of a rule is exact without information; with information it comes from a
+  10-million-game table.
+
+**Winner's curse (medians over 200 replications).**
+
+| World | Games | In-sample ROI of the pick | True ROI of the pick | Pick has information | Naive p < 5% |
+|---|---|---|---|---|---|
+| no edge | 500 | +39.5% | -4.8% | 0% | 28.0% |
+| no edge | 1,000 | +27.7% | -4.8% | 0% | 23.5% |
+| no edge | 2,000 | +22.5% | -4.8% | 0% | 32.0% |
+| no edge | 5,000 | +13.5% | -4.8% | 0% | 24.5% |
+| 20 of 200 real | 500 | +37.7% | -4.8% | 38% | 47.0% |
+| 20 of 200 real | 1,000 | +25.1% | -4.8% | 44% | 43.0% |
+| 20 of 200 real | 2,000 | +21.7% | +1.5% | 55% | 47.5% |
+| 20 of 200 real | 5,000 | +11.0% | +3.0% | 77% | 57.0% |
+
+**What each tool said.**
 * 200 replications at 2,000 games; 100 at 10,000.
+* For tests about the pick, "(x% false)" is the share of rejections where the pick had no
+  information.
+* MCS uses the range statistic at 90%.
 
-**Winner's curse (EXP-2, grid worlds; medians over 200 replications) [confirmado in simulation]**
-
-| World | Games | In-sample ROI of the pick | True ROI of the pick | Naive p < 5% |
-|---|---|---|---|---|
-| no edge | 500 | +30.3% | −4.8% | 13% |
-| no edge | 2,000 | +19.3% | −4.9% | 16% |
-| no edge | 5,000 | +13.4% | −4.7% | 12.5% |
-| 20 of 200 real | 500 | +31.7% | −3.4% | 20.5% |
-| 20 of 200 real | 2,000 | +19.7% | +3.2% | 30% |
-| 20 of 200 real | 5,000 | +12.0% | +4.6% | 41.5% |
-
-The pick tends to be a model that **bets rarely** and got lucky. In "grid, no edge" at 2,000 games the
-pick placed a median of 151 bets, against 310 for the typical candidate.
-
-Noise concentrates on long odds. A model whose errors are symmetric on the probit/logit scale sees the
-largest apparent EVs on underdogs, where per-bet variance is highest. Over 60 samples of 10,000 games,
-the pooled ROI of the no-information models ranged from −11% to +10%, around a true −4.8%. (This was an
-ad-hoc check on the "grid, 20 of 200 real" world; it is not in `results.json`.)
-
-**What each tool said (EXP-3/4) [confirmado in simulation]**
-
-* In the no-edge worlds, "rejects" = false positives; in the real-edge worlds = power.
-* N̂ = the paper's Eq. 9.
-* MCS = 90% confidence set, T_max statistic. A spot check with the range statistic gave the same sizes.
-* P(loss) = CSCV probability that the pick loses out of sample.
-
-| World | Games | True ROI of pick (median) | Naive | Bonferroni | DSR N=200 | DSR N̂ (N̂) | SPA | RC | MCS size | PBO | P(loss) |
+| World | Games | True ROI of pick (median) | Naive | Bonferroni | DSR, N = M | DSR, N̂ (N̂) | SPA | RC | MCS size (median) | PBO | P(loss) |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| clones, no edge | 2,000 | -4.7% | 12.5% | 0.5% | 2.5% | 3% (53) | 0.5% | 0.5% | 199.8 | 0.50 | 0.65 |
-| clones, same real edge | 2,000 | +3.6% | 38% | 1% | 12% | 18% (37) | 5% | 7% | 199.9 | 0.51 | 0.42 |
-| grid, no edge | 2,000 | -4.6% | 10% | 0% | 0.5% | 2% (72) | 0% | 0.5% | 199.2 | 0.49 | 0.66 |
-| grid, 20 of 200 real | 2,000 | +2.4% | 27.5% | 0% | 2.5% | 3% (75) | 1% | 3.5% | 198.8 | 0.37 | 0.55 |
-| clones, no edge | 10,000 | -4.8% | 2% | 0% | 0% | 0% (52) | 0% | 0% | 199.8 | 0.49 | 0.79 |
-| clones, same real edge | 10,000 | +3.6% | 64% | 2% | 29% | 42% (35) | 16% | 23% | 199.8 | 0.51 | 0.27 |
-| grid, no edge | 10,000 | -5.0% | 11% | 0% | 0% | 0% (67) | 0% | 0% | 196.7 | 0.39 | 0.65 |
-| grid, 20 of 200 real | 10,000 | +4.2% | 47% | 0% | 0% | 1% (69) | 2% | 6% | 194.6 | 0.10 | 0.34 |
+| clones, zero EV | 2,000 | +0.0% | 34.5% | 1.0% | 4.0% | 7.0% (43) | 3.5% | 4.5% | 200 | 0.49 | 0.48 |
+| grid, zero EV | 2,000 | +0.0% | 43.0% | 0.0% | 0.5% | 3.0% (65) | 0.5% | 4.0% | 200 | 0.50 | 0.51 |
+| clones, no edge (−margin) | 2,000 | -4.8% | 17.5% | 0.0% | 0.5% | 0.5% (61) | 0.5% | 0.5% | 200 | 0.49 | 0.68 |
+| grid, no edge (−margin) | 2,000 | -4.8% | 27.5% | 0.0% | 0.5% | 1.0% (85) | 0.0% | 0.0% | 200 | 0.44 | 0.61 |
+| clones, same real edge | 2,000 | +2.8% | 50.5% | 0.5% | 9.5% | 16.0% (41) | 9.5% | 10.0% | 200 | 0.50 | 0.38 |
+| grid, 20 of 200 real | 2,000 | +1.9% | 43.0% (15.5% false) | 0.0% | 0.0% | 1.0% (88) | 2.5% | 5.5% | 200 | 0.35 | 0.51 |
+| clones, zero EV | 10,000 | +0.0% | 28.0% | 0.0% | 6.0% | 9.0% (43) | 9.0% | 9.0% | 200 | 0.48 | 0.50 |
+| grid, zero EV | 10,000 | +0.0% | 40.0% | 2.0% | 3.0% | 5.0% (65) | 6.0% | 6.0% | 200 | 0.48 | 0.51 |
+| clones, no edge (−margin) | 10,000 | -4.8% | 6.0% | 0.0% | 0.0% | 0.0% (61) | 0.0% | 0.0% | 200 | 0.49 | 0.81 |
+| grid, no edge (−margin) | 10,000 | -4.8% | 17.0% | 0.0% | 0.0% | 0.0% (84) | 0.0% | 0.0% | 199 | 0.35 | 0.70 |
+| clones, same real edge | 10,000 | +2.8% | 73.0% | 9.0% | 25.0% | 36.0% (42) | 29.0% | 26.0% | 200 | 0.52 | 0.22 |
+| grid, 20 of 200 real | 10,000 | +3.9% | 61.0% (5.0% false) | 2.0% | 0.0% | 0.0% (89) | 6.0% | 6.0% | 183 | 0.12 | 0.38 |
 
-How to read it:
-1. **The corrected tests control false positives.**
-   * SPA, RC, DSR and Bonferroni had ≤ 3% false positives in every no-edge world.
-   * Testing the pick naively gave 2–16%.
-2. **Their power is poor with 200 candidates and a few-% edge.**
-   * A real +3.6% edge with 10,000 games was detected by SPA 16%, RC 23%, DSR 29–42% and Bonferroni 2%
-     of the time.
-   * **P&L alone cannot validate 200 candidates at LoL sample sizes.**
-3. **PBO judges the selection step, not the edge.**
-   * Among clones it is ≈ 0.5 whether or not the edge exists. The PBO paper says as much (see
-     References).
-   * It was *lower* (0.39) in a world where every model loses than in the clones-with-edge world (0.51).
-   * The paper's rule "reject if PBO > 0.05" would have rejected every world here, including those with
-     a real edge.
-   * PBO behaved as intended only when candidates genuinely differed (grid, 20 of 200 real: 0.10).
-   * CSCV's probability of loss separated the worlds better (0.27 vs 0.79) but is not a formal test.
-4. **The MCS keeps 97–100% of the models even at 10,000 games.** The data cannot rank them.
-   * In "grid, 20 of 200 real" the set is ~90% noise models.
-   * Averaging it would dilute the real signal, so averaging is only sensible for near-duplicates of one
-     idea.
-   * The choice has to come from what you pre-specified and from simplicity, and it stays unvalidated
-     until the lockbox and live test.
-5. **For DSR, the paper's N̂ = ρ̄ + (1−ρ̄)M gave N̂ ≈ 35–75 for these 200 models.**
-   * It kept false positives ≤ 3% and had more power than N = 200.
-   * Report both, and count **every** trial you ever ran in M, not just the final 200.
+1. **False positives.** The honest test is at the zero-EV boundary; the −margin worlds are easier.
+
+   | Test | Zero-EV worlds | −margin worlds |
+   |---|---|---|
+   | SPA | 0.5%–9.0% | 0.0%–0.5% |
+   | RC | 4.0%–9.0% | 0.0%–0.5% |
+   | DSR, N = M | 0.5%–6.0% | 0.0%–0.5% |
+   | DSR, N̂ | 3.0%–9.0% | 0.0%–1.0% |
+   | Naive test of the pick | **28.0%–43.0%** | 6.0%–27.5% |
+
+   * Each cell has 100–200 replications, so its sampling SE is 1.5–2.2 pp.
+   * The corrected tests are therefore roughly at their nominal 5%, not clearly below it.
+   * The naive test is far above it.
+
+2. **DSR: use N = all trials together with the cross-sectional variance of their Sharpe ratios.**
+   * That variance already shrinks when trials are correlated.
+   * Also shrinking N with the paper's N̂ = ρ̄ + (1−ρ̄)M (here N̂ ≈ 41–89) counts the
+     correlation twice.
+   * EXP-10 checks this directly: 200 trials, true SR 0, 1,000 returns each.
+
+     | Correlation between trials | DSR false positives, N = M | DSR false positives, N̂ (Eq. 9) |
+     |---|---|---|
+     | 0.0 | 0.0% | 0.0% |
+     | 0.5 | 1.6% | 2.8% |
+     | 0.7 | 2.6% | 4.9% |
+     | 0.9 | 4.5% | 7.0% |
+   * DSR is very conservative for independent trials.
+3. **Studentized SPA on P&L is somewhat liberal with skewed bets, and a minimum-bets filter only
+   partly fixes it.**
+   * EXP-10: zero EV, 200 candidates at fixed odds 1.4 / 1.9 / 2.8 / 5.0, 2,000 games.
+
+     | Candidates | SPA false positives | RC false positives |
+     |---|---|---|
+     | rates 0.5%-40%, no filter | 7.8% | 6.4% |
+     | rates 0.5%-40%, min 100 bets | 6.2% | 3.8% |
+     | rates 5%-40%, no filter | 7.9% | 3.9% |
+   * Prefer the RC as the P&L family report, or read SPA p-values as slightly optimistic.
+   * P&L tests are reports here, not gates.
+   * `arch` 8.0's `SPA` does not studentize despite its `studentize` flag (source read). It is a
+     Reality Check.
+4. **PBO judges the selection step, not the edge.**
+   * Among clones it is ≈ 0.5 with or without an edge. The paper says so itself (References).
+   * It was 0.35 where every model loses. There Sharpe selection consistently picks the
+     rules that bet least, because they lose least.
+   * It was 0.12 where 20 of 200 rules are genuinely better, the one world where it behaved as
+     intended.
+   * The paper's rule "reject if PBO > 0.05" would have rejected the real edges here.
+   * CSCV's probability of loss separated the worlds better (0.22 with an edge vs
+     0.81 without), but it is not a formal test.
+   * CSCV's "performance degradation" slope is −1 by construction when the same model is picked in
+     every split. In-sample and out-of-sample are complementary halves, so OOS = 2·full − IS.
+5. **The MCS kept 183–200 of 200 models.** The data cannot rank them by P&L.
+   * Averaging the MCS members is **not** a fix. Where only 20 of 200 carry information, the average
+     is ~85–90% noise and loses (as the hostile review measured).
+   * Choose by the pre-registered information rule (stage 6) and measure on the lockbox.
+6. **The pick bets rarely and got lucky.**
+   * In-sample Sharpe favours rules with few bets.
+   * With probit/logit-symmetric errors, spurious EVs concentrate on underdogs, where per-bet variance
+     is highest.
+   * That is why the simulation caps odds at 5.0. Without the cap, bets above 5.0 were ~25–31% of bets
+     but ~70% of the P&L variance (independent review of the first run).
 
 ---
 
-## 7. Sample-size reality check
+## 8. Sample size and live monitoring
 
-**Independent flat bets needed [confirmado: arithmetic, `bets_needed`].**
-Per-bet sd = odds·√(p(1−p)), with p = (1+ROI)/odds. Full grid in `results.json`.
+**Independent flat bets needed [confirmado: arithmetic, and checked by simulation in
+`test_toolkit.py`].**
 
 | Decimal odds | True ROI | t = 2 | t = 3 | 80% power (5%, one-sided) | Same, Bonferroni ×200 |
 |---|---|---|---|---|---|
@@ -316,165 +416,166 @@ Per-bet sd = odds·√(p(1−p)), with p = (1+ROI)/odds. Full grid in `results.j
 | 2.5 | 3% | 6,730 | 15,142 | 10,402 | 31,431 |
 | 2.5 | 5% | 2,437 | 5,482 | 3,766 | 11,378 |
 
-* Two bets on the same game (15:00 and 20:00) are **not** two independent bets.
-  * In EXP-6 the clustered SE was 1.19× the naive SE.
-  * Count games, not bets, or cluster.
-* The Bonferroni column is an upper bound for correlated models; SPA/DSR need less.
-  * Still, the order of magnitude is **tens of thousands of bets to validate the best of 200
-    candidates by P&L alone**. Ranking them against each other needs more.
-* A professional LoL year has ~10–12.5k pro games **in total** in Oracle's Elixir.
-  * Counted: 12,549 games in 55 leagues (2022); 11,010 in 51 (2023); 9,804 in 51 (2024, file ends
-    2024-12-08).
-  * The games you can actually bet live at 15:00 are fewer.
+* Two bets on the same game (15:00 and 20:00) are **not** two independent bets: count games, or
+  cluster.
+* A pro LoL year has ~10–12.5k games **in total** in Oracle's Elixir:
+  * 12,549 games in 55 leagues (2022);
+  * 11,010 in 51 (2023);
+  * 9,804 in 51 (2024, file ends 2024-12-08).
+* The games you can bet live at 15:00 are fewer.
+* **P&L alone cannot validate the best of 200 candidates:**
+  * a 3% edge at odds 1.9 needs 3,983 bets for t = 2;
+  * it needs 18,602 for 80% power after a Bonferroni correction.
 
-**Power of three tests for the SAME real edge (EXP-5; one model; true ROI ≈ +3.6%; one-sided 5%;
-1,000 replications) [confirmado in simulation]**
+**Live monitoring when you look after every bet (EXP-9) [confirmado in simulation].**
+* 2,000 paths.
+* Odds are uniform on 1.5–3.5, and the bettor claims +5% on every bet.
+* SPRT: scale up at 20, kill at 0.05.
 
-| Games | ROI t-test | Δlog loss vs market | Encompassing (c > 0) |
-|---|---|---|---|
-| 500 | 4% | 8% | 24% |
-| 1,000 | 5% | 9% | 38% |
-| 2,000 | 7% | 11% | 56% |
-| 5,000 | 12% | 19% | 88% |
-| 10,000 | 21% | 31% | 100% |
+| True state (the bettor always claims +5%) | SPRT scales up | SPRT kills | Undecided after 5,000 bets | Median bets to decision | Naive t > 1.645 at any check |
+|---|---|---|---|---|---|
+| break_even (no edge) | 4.0% | 85.5% | 10.6% | 2,174 | 39.8% |
+| claim right (+5%) | 84.4% | 4.3% | 11.3% | 2,230 | 96.1% |
+| overconfident (claims +5%, true +2%) | 25.1% | 43.6% | 31.2% | 3,358 | 67.7% |
+| losing (true -3%) | 0.1% | 99.7% | 0.2% | 1,176 | 19.4% |
 
-* With no edge, the encompassing test rejected 4.0%–6.6% of the time
-  (nominal 5%); the other two rejected ≤ 2%.
-* The encompassing test uses **every game**, not just the games you bet, and the full probability, not
-  just win/lose.
-  * At 2,000 games it detected the edge 56% of the time. The ROI t-test was still at 21% with
-    10,000 games.
-  * So it needs **more than 5× fewer games** here. Extrapolating the ROI curve suggests ~20–35×, but
-    that is an extrapolation [especulação].
-* It proves *information*, not *profit after margin and execution*.
-  * So it is the first gate (stage 3), not the last.
+* The naive rule ("scale up when t > 1.645") fires for 40% of break-even bettors when checked
+  after every bet. Armitage et al. (1969) describe this optional-stopping problem.
+* The SPRT's false scale-up rate stays ≤ 5% by Ville's inequality, and its false kill rate when the
+  claim is right stays ≤ 5%.
+  * It is valid for bets where your claimed probability is ≥ 1/odds, which is what an EV rule bets on.
+  * It tests "better than break-even", not "as good as claimed".
+  * **An overconfident claim hurts.** Claiming +5% when the truth was +2%, the SPRT killed that real,
+    smaller edge 44% of the time, and scaled up only 25%.
+  * Claim what the lockbox measured, or shrink the claim toward break-even. A shrunk claim keeps the
+    guarantee.
+* **The drop-top-1% rule kills real edges.**
+  * Shares of real +3% edges (2,000 bets) whose ROI turns ≤ 0 after dropping the best 1% of bets:
+    odds 1.9: 17% · odds 2.5: 31% · odds 3.5: 44% · odds 5.0: 59%.
+  * Audit the prices of the top bets instead. If you trim, compare against the same trim applied to
+    bootstrap or null samples.
 
 ---
 
-## 8. LoL-live leakage checklist (run this before any metric)
-
-Each item is a way a live LoL backtest can look profitable without being so.
+## 9. LoL-live leakage checklist (run before any metric)
 
 1. **Odds ↔ state alignment (the most important live leak) [provável].**
-   * The odds you score at "15:00" must be the price that was actually on offer while your 15:00
-     features were already known.
-   * Game clock, data feed and broadcast are all out of sync. If the odds snapshot is a few seconds
-     older than an event your features include (a kill, a dragon), the backtest shows an edge that
-     does not exist.
-   * Test: distribution of (odds timestamp − feature timestamp). Re-run with the odds snapshot
-     deliberately taken 10–30 s *later*. If the edge collapses, it was a timing artefact.
+   * The price you score at "15:00" must be the price on offer while your 15:00 features were known.
+   * Game clock, data feed and broadcast are all out of sync.
+   * Test: re-run with the odds snapshot deliberately taken 10–30 s later. If the edge collapses, it
+     was a timing artefact.
 2. **Whole-game columns used as 15:00 features [confirmado].**
    * Oracle's Elixir mixes time-stamped columns (`golddiffat15`, `killsat15`, …) with **whole-game**
-     columns: `towers` (full-game total, mean 6.06 in 2023), `dragons`, `firsttower`, `firstdragon`,
-     `firstherald`, `firstbaron`, `firsttothreetowers`, `inhibitors`, `kills`.
-   * Any of these used at 15:00 leaks the future. Rebuild them from the event timeline at the timestamp.
-3. **gameid split [confirmado as mechanism].**
+     columns: `towers` (mean 6.06 in 2023), `dragons`, `firsttower`, `firstdragon`, `firstherald`,
+     `firstbaron`, `firsttothreetowers`, `inhibitors`, `kills`.
+   * Rebuild features from the event timeline at the timestamp.
+3. **Train/serve skew [provável].**
+   * `golddiffat15` in a post-game dataset is not necessarily what you can observe live, from the
+     overlay or your feed, at 15:00. The definition and the timing can differ.
+   * Train on what you will actually see.
+4. **gameid and series splits [confirmado as a mechanism].**
    * The 15:00 and 20:00 rows of a game share one outcome.
-   * If one row is in train and the other in test, the model can memorise the game.
-   * Keep all rows of a game in the same fold, and all maps of a series (same teams, same day) too.
-4. **Pre-game features from the future [provável].**
-   * Team ratings, Elo, form, champion win rates and patch statistics must use only games *before*
-     the game (for a same-day series, only earlier maps).
+   * Maps of a series share teams, day and form.
+   * Keep them in one fold, and cluster by them.
+5. **Pre-game features from the future [provável].**
+   * Ratings, form, champion and patch statistics must use only earlier games.
    * A champion win rate computed over the whole patch is a leak.
-5. **Survivorship in the odds data [provável].**
+6. **As-of assertions and a canary [especulação: my design].**
+   * Every feature carries the timestamp of its newest input. Assert that it is ≤ the decision time.
+   * Inject a known future column (a canary) and check that the audit flags it.
+7. **Synthetic-outcome control [especulação: my design; the logic is exact].**
+   * Replace outcomes with `y* ~ Bernoulli(de-vigged price)` and rerun the whole pipeline.
+   * Nobody can beat the price on y*, so an edge on y* means label leakage or a bug.
+   * It **cannot** catch features that encode the real outcome (items 2–3). Do not permute real
+     outcomes instead: that breaks the odds↔outcome link.
+8. **Survivorship [provável].**
    * Markets are suspended around fights and objectives.
-   * If games or timestamps with no price are dropped, and suspension correlates with game state,
-     the sample is biased.
-   * Log suspensions; don't silently drop them.
-6. **Partial data [confirmado].**
-   * Counted here, in Oracle's Elixir, games flagged partial have no at-10/15/20 stats:
+   * Dropping unpriced games or timestamps biases the sample. Log suspensions.
+9. **Partial data [confirmado].**
+   * 15.1% / 15.8% / 14.2% of Oracle's Elixir games (2022/23/24) are flagged partial and have no
+     at-10/15/20 stats.
+   * 91–93% of those are LPL or LDL.
+10. **Execution and adverse selection [confirmado as a mechanism].**
+    * Live bets are delayed and can be rejected when the game state changes:
+      * Pinnacle holds live bets and rejects them after material changes;
+      * Betfair's in-play delay is 1–12 s.
+    * The book's official data feed may run ahead of what you see, so the bets it accepts can be
+      adversely selected.
+    * Backtests at snapshot prices are an upper bound. Log every attempt.
+11. **Data errors [confirmado].**
+    * Clegg & Cartlidge (2025): most of a published strategy's out-of-sample profit came from one bet
+      at erroneous long odds.
+    * Check for stale prices, impossible overrounds and duplicated games.
+12. **The de-vig method moves your benchmark [confirmado: arithmetic].**
+    * With two outcomes, the additive and Shin methods coincide (`implied` R package docs); the
+      multiplicative method differs.
+    * How much the favourite's fair probability moves between the two methods:
 
-     | | 2022 | 2023 | 2024 |
-     |---|---|---|---|
-     | Share of games that are partial | 15.1% | 15.8% | 14.2% |
+      | Odds | Change |
+      |---|---|
+      | 1.87 / 1.95 | 0.05 pp |
+      | 1.30 / 3.50 | 1.26 pp |
+      | 1.10 / 7.00 | 1.89 pp |
 
-   * About 92–93% of the partial games are LPL or LDL.
-   * If you bet those leagues live, a model trained on "complete" games has not seen them.
-7. **Execution [confirmado as mechanism].**
-   * Live bets are delayed and can be rejected when the game state changes:
-     * Pinnacle holds live bets and rejects them after material changes.
-     * Betfair in-play bet delay is 1–12 s.
-   * A backtest at the snapshot price is an upper bound. Log every attempt (price requested vs
-     obtained, accepted or rejected).
-8. **Data errors [confirmado].**
-   * Clegg & Cartlidge (2025) found most of a published strategy's OOS profit came from one bet at
-     erroneous long odds.
-   * Check for stale prices (unchanged while the game changes), impossible overrounds and duplicated
-     games.
-9. **The de-vig method moves your benchmark [confirmado: arithmetic].**
-   * With two outcomes, additive = Shin (per the `implied` R package docs); multiplicative differs.
-   * How much the favourite's fair probability changes between the two methods:
-
-     | Odds | Change |
-     |---|---|
-     | 1.87 / 1.95 | 0.05 pp |
-     | 1.30 / 3.50 | 1.26 pp |
-     | 1.10 / 7.00 | 1.89 pp |
-
-   * Against a 2–3% edge that is not small, and lopsided prices are common at 15:00.
-   * Choose the method by the walk-forward log loss of the de-vigged market on your own data, and fix
-     it in stage 0 [provável].
-10. **Negative control with synthetic outcomes [especulação: my design; the logic is exact].**
-    * Replace every outcome with `y* ~ Bernoulli(de-vigged market probability)`.
-    * Rerun the **whole** pipeline on y*: feature engineering, training, walk-forward, evaluation.
-    * By construction nobody can beat the market on y*, so the backtest must show ROI ≈ −margin.
-    * An "edge" on y* means label leakage (for example, target-derived features computed with future
-      rows) or an evaluation bug.
-    * Do **not** simply permute the real outcomes. That breaks the odds↔outcome link: an underdog at
-      3.50 "wins" ~50% of the time and looks hugely profitable with no leak at all.
-    * This control cannot catch features that encode the real outcome (item 2). Only the timestamp
-      audit catches those.
+    * Choose the method by the walk-forward log loss of the de-vigged price on your data, and fix it
+      in stage 0 [provável].
 
 ---
 
-## 9. Reproduce
+## 10. Reproduce and use
 
 ```
 pip install numpy scipy pandas statsmodels arch
-python test_toolkit.py                                   # ~40 s, all checks must PASS
-OMP_NUM_THREADS=1 python simulate.py --out results.json  # ~40 min on 4 cores
+python test_toolkit.py                                   # ~1 min, all checks must PASS
+OMP_NUM_THREADS=1 python simulate.py --out results.json  # ~1.5 h on 4 cores
 python lol_resolution_check.py /path/to/oracles_elixir_csvs
 ```
 
-To use the toolkit on your data, build:
-* one row per game, sorted by time;
-* `R[g, k]` = walk-forward out-of-sample profit of model k in game g, with the 15:00 and 20:00 bets
-  **summed** into the game row (`aggregate_by_game`);
-* `y`, the market's fair probability at bet time, and each model's probability.
+**On your data**
+* One row per game, sorted by time. The 15:00 and 20:00 bets are **summed** into the game row
+  (`aggregate_by_game`).
+* Walk-forward predictions of every candidate for every game (`P`), the de-vigged price (`q`), the
+  outcome (`y`), and the P&L matrix (`R`).
+* Then, in funnel order:
+
+| Stage | Function |
+|---|---|
+| 3 | `information_gate(y, q, P, groups=series_id)` |
+| 4 | `fit_blend` / `blend_prob` (walk-forward) |
+| 5 | `spa_vs_no_bet(R)`, `deflated_sharpe`, `pbo_cscv(R)`, `model_confidence_set(-R)` as reports |
+| 9 | `sprt_break_even` live |
 
 ---
 
-## 10. What was NOT verified / limitations
+## 11. What was NOT verified / limitations
 
 * **The simulation is not LoL.**
-  * Every magnitude in it is an assumption: margin 5%, the size of the edge, how much of the game is
-    decided between 15:00 and 20:00, and the correlation between models.
-  * It shows *mechanisms*, with numbers. It does not predict your results.
-* **Only selection bias is simulated.**
-  * The models are fixed rules, not fitted. Real pipelines also overfit through fitting and feature
-    search, so reality is likely worse than these tables [provável].
-* **Stationarity.**
-  * Patches, meta, roster changes and bookmaker model changes are not simulated.
-  * The bootstrap here resamples games iid. If games on the same day or patch are dependent, use
-    `mean_block > 1` with games sorted by time.
-* **Markout magnitude.**
-  * The real-data ratio (≈ 5.5–5.9× at odds 1.5–5) uses *proxy* prices from a gold/xp/kills logistic
-    model, not real odds. Those proxies are not perfect martingales (a 0.006 gap in the variance
-    identity).
-  * Real market prices contain more information (draft, team strength), so the true ratio can differ
-    in either direction.
-  * Measure `Var(profit) / Var(markout)` on your own logged odds.
+  * Every magnitude in it is an assumption: margin, edge size, how much of the game is decided
+    between 15:00 and 20:00, correlation between models, the odds cap.
+  * It shows mechanisms with numbers. It does not predict your results.
+* **Only selection among fixed rules is simulated.**
+  * Real pipelines also overfit through fitting and feature search.
+  * Reality is likely worse [provável].
+* **No non-stationarity.**
+  * Patches, meta, roster changes and bookmaker model changes are absent.
+  * The bootstraps here resample games iid. If games on the same day or patch are dependent, use
+    blocks: `mean_block > 1` with games sorted by time, or `groups=`.
+* **The information gate is new in this form** (my combination of standard parts).
+  * Checked only in this simulation and in `test_toolkit.py`.
+  * Validate its size on your own data with the synthetic-outcome control (§9.7).
+* **The live-market magnitudes use proxy prices, not real odds** (§6).
 * **Literature access.**
-  * Several sources were checked only through official abstracts or secondary summaries (tagged in
-    References).
-  * The corrected numbers in the Walsh & Joshi corrigendum were not checked against the corrigendum
+  * Several sources were checked only through official abstracts or secondary summaries (tagged
+    below).
+  * The Walsh & Joshi corrigendum's corrected numbers were not checked against the corrigendum
     itself.
 * **What professional syndicates do internally is unknown [não sei].**
-  * Section 2 lists only what is published.
-* **"MSR"** in the question is ambiguous (maximum Sharpe ratio? expected-max SR / SR₀? modified
-  Sharpe? minimum track record?).
-  * It does not appear in the PBO or DSR papers.
-  * I did not guess its meaning.
+* **"MSR" in the question is ambiguous.** It is not an acronym used in the PBO or DSR papers.
+  Plausible meanings, and where each lives in this funnel:
+  * SR₀, the expected maximum Sharpe ratio: the benchmark inside DSR.
+  * The Minimum Track Record Length (PSR paper).
+  * A "modified Sharpe ratio" (modified VaR).
+  * The maximum-Sharpe portfolio.
 
 ---
 
@@ -482,76 +583,79 @@ To use the toolkit on your data, build:
 
 How each reference was checked:
 * **VP** = primary text read.
-* **VP-idx** = official abstract or journal page, seen via search.
+* **VP-idx** = official abstract, record or journal page, seen via search.
 * **VS** = reliable secondary source.
 
-In this sandbox the research agents could not open SSRN, arXiv or journal sites directly. They read
-author PDFs mirrored on GitHub and the search-engine extracts.
+The research agents could not open SSRN, arXiv or journal sites directly. They read author PDFs
+mirrored on GitHub and search-index records.
 
 **Backtest overfitting**
 * Bailey, Borwein, López de Prado & Zhu, "The Probability of Backtest Overfitting",
   *J. Computational Finance* 20(4), 2017. **VP** (SSRN version).
   * Algorithm 2.3.
-  * Four diagnostics: PBO, performance degradation, probability of loss, stochastic dominance.
+  * Four diagnostics.
   * "Reject models for which PBO is estimated to be greater than 0.05."
   * Verbatim: "it is entirely possible that all the N strategies have high but similar Sharpe ratios.
     Since none of the strategies is clearly better than the rest, PBO will be high."
-  * Note: C(16,8) = 12,870; the paper's "12,780" is a typo.
+  * C(16,8) = 12,870; the paper's "12,780" is a typo.
 * Bailey & López de Prado, "The Deflated Sharpe Ratio", *J. Portfolio Management* 40(5), 2014. **VP**.
-  * Eq. 2 (DSR, raw kurtosis).
-  * Appendix A.3, Eq. 9: N̂ = ρ̂ + (1 − ρ̂)M. I read this on the page image.
+  * Eq. 2 (raw kurtosis).
+  * Eq. 9, N̂ = ρ̂ + (1 − ρ̂)M, read on the page image.
 * Bailey & López de Prado, "The Sharpe Ratio Efficient Frontier", *J. Risk* 15(2), 2012. **VP**.
-  PSR and MinTRL.
+  PSR, MinTRL.
 * Bailey, Borwein, López de Prado & Zhu, "Pseudo-Mathematics and Financial Charlatanism",
   *Notices AMS* 61(5), 2014. **VP**. MinBTL.
-* López de Prado & Bailey, "The False Strategy Theorem", *American Mathematical Monthly* 128(9), 2021.
+* López de Prado & Bailey, "The False Strategy Theorem", *Amer. Math. Monthly* 128(9), 2021.
   **VP-idx**.
-* López de Prado, "A Data Science Solution to the Multiple-Testing Crisis in Financial Research",
-  *J. Financial Data Science* 1(1), 2019. **VP-idx**.
-* López de Prado & Lewis, "Detection of false investment strategies using unsupervised learning
-  methods", *Quantitative Finance* 19(9), 2019. **VP-idx**.
+* López de Prado, *J. Financial Data Science* 1(1), 2019. **VP-idx**.
+* López de Prado & Lewis, *Quantitative Finance* 19(9), 2019. **VP-idx**.
 
-**Data-snooping tests**
-* White, "A Reality Check for Data Snooping", *Econometrica* 68(5), 2000. **VP-idx**.
-* Hansen, "A Test for Superior Predictive Ability", *JBES* 23(4), 2005. **VP-idx**.
-* Romano & Wolf, "Stepwise Multiple Testing as Formalized Data Snooping", *Econometrica* 73(4), 2005.
-  **VP-idx**.
-* Hansen, Lunde & Nason, "The Model Confidence Set", *Econometrica* 79(2), 2011. **VP-idx**.
-  "Uninformative data yield a MCS with many models."
-* Politis & Romano, "The Stationary Bootstrap", *JASA* 89(428), 1994. **VP-idx**.
-* Harvey, Liu & Zhu, "…and the Cross-Section of Expected Returns", *RFS* 29(1), 2016. **VP-idx**.
-  t > 3.0.
-* Harvey & Liu, "Backtesting", *JPM* 42(1), 2015. **VS**.
+**Data snooping and multiple testing**
+* White, *Econometrica* 68(5), 2000. **VP-idx**.
+* Hansen, *JBES* 23(4), 2005. **VP-idx**.
+* Romano & Wolf, *Econometrica* 73(4), 2005. **VP-idx**. Asymptotic FWER control.
+* Hansen, Lunde & Nason, *Econometrica* 79(2), 2011. **VP-idx**.
+* Politis & Romano, *JASA* 89(428), 1994. **VP-idx**.
+* Westfall & Young, *Resampling-Based Multiple Testing*, Wiley 1993. **VS**. Single-step max-T.
+* Chernozhukov, Chetverikov & Kato, *Ann. Statist.* 41(6), 2013. **VP-idx**. Multiplier bootstrap for
+  maxima.
+* Harvey, Liu & Zhu, *RFS* 29(1), 2016. **VP-idx**.
+* Harvey & Liu, *JPM* 42(1), 2015. **VS**.
 
-**Forecast comparison**
+**Forecast comparison and orthogonal scores**
 * Diebold & Mariano, *JBES* 13(3), 1995. **VP-idx**.
 * Giacomini & White, *Econometrica* 74(6), 2006. **VP-idx**.
-* Fair & Shiller, "Comparing information in forecasts from econometric models", *AER* 80(3), 1990.
+* Fair & Shiller, *AER* 80(3), 1990. **VP-idx**.
+* Clements & Harvey, *J. Applied Econometrics* 25(6), 2010. **VP-idx**.
+* Neyman, "Optimal asymptotic tests of composite statistical hypotheses", 1959. **VS**.
+* Chernozhukov et al., "Double/debiased machine learning", *Econometrics Journal* 21(1), 2018.
   **VP-idx**.
-* Clements & Harvey, "Forecast encompassing tests and probability forecasts",
-  *J. Applied Econometrics* 25(6), 2010. **VP-idx**.
+
+**Sequential testing**
+* Ville, *Étude critique de la notion de collectif*, 1939. **VS**.
+* Wald, *Ann. Math. Statist.* 16(2), 1945. **VP-idx**.
+* Shafer, "Testing by betting", *JRSS-A* 184(2), 2021. **VP-idx**.
+* Ramdas, Grünwald, Vovk & Shafer, *Statistical Science* 38(4), 2023. **VP-idx**.
+* Vovk & Wang, *Ann. Statist.* 49(3), 2021. **VP-idx**.
+* Armitage, McPherson & Rowe, *JRSS-A* 132(2), 1969. **VP-idx**.
 
 **Betting**
-* Benter, "Computer based horse race handicapping and wagering systems", in
-  *Efficiency of Racetrack Betting Markets*, 1994. **VP** for the method, **VS** for the pseudo-R²
-  numbers.
+* Benter, 1994. **VP** for the method, **VS** for the numbers.
 * Hubáček, Šourek & Železný, *IJF* 35(2), 2019. **VP**.
 * Hubáček & Šír, *IJF* 39(2), 2023. **VP**.
-* Walsh & Joshi, *Machine Learning with Applications* 16, 2024, with corrigendum in MLWA 19, 2025.
-  **VP** that the corrigendum exists; its corrected numbers are **VS**.
+* Walsh & Joshi, *MLWA* 16, 2024, with corrigendum in *MLWA* 19, 2025. **VP** that the corrigendum
+  exists.
 * Wunderlich & Memmert, *IJF* 36(2), 2020. **VP**.
 * Kaunitz, Zhong & Kreiner, arXiv 1710.02824, 2017. **VP**.
 * Clegg & Cartlidge, *IJF* 41(2), 2025. **VP**.
 
 **Converting odds and staking**
-* Štrumbelj, *IJF* 30(4), 2014 (Shin's method). **VP**.
-* Clarke, Kovalchik & Ingram, *AJSS* 5(6), 2017 (power method). **VP**.
-* The documentation of the R package `implied` states that with two outcomes the additive and Shin
-  methods coincide. **VP**.
-* Baker & McHale, "Optimal betting under parameter uncertainty", *Decision Analysis* 10(3), 2013
-  (shrink the Kelly stake). **VP**.
+* Štrumbelj, *IJF* 30(4), 2014. **VP**.
+* Clarke, Kovalchik & Ingram, *AJSS* 5(6), 2017. **VP**.
+* The `implied` R package documentation. **VP**.
+* Baker & McHale, *Decision Analysis* 10(3), 2013. **VP**.
 
 **In-play markets and execution**
 * Pinnacle and Buchdahl on CLV. **VP**.
-* Pinnacle rules on accepting live bets, and Betfair in-play bet delays. **VP**.
-* Databento microstructure guide, definition of "markout". **VS**.
+* Pinnacle's rules for accepting live bets, and Betfair's in-play delays. **VP**.
+* Databento's definition of "markout". **VS**.
