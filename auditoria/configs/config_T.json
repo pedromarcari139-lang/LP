@@ -1,0 +1,292 @@
+{
+ "regime": "sujo",
+ "motores": {
+  "sujo": "2717201a8a790d679924efb80ae09fbbe17a40c80ae4bde60ea18a50aa773952"
+ },
+ "script_sha256": "08fbd18576f2c8d901425c533b70492603994061ced99c6ca3b98070e47ce830",
+ "C_FIXO": 1.0,
+ "PASSO": 2,
+ "PASSO_ESCOLHA": 2,
+ "tempos": [
+  10,
+  15,
+  20,
+  25,
+  30,
+  35
+ ],
+ "min_treino": {
+  "10": 60,
+  "15": 60,
+  "20": 60,
+  "25": 60,
+  "30": 60,
+  "35": 50,
+  "5": 60,
+  "40": 60,
+  "45": 40
+ },
+ "lockbox_serio": 700,
+ "hist_inicio": 200,
+ "inicio_opcoes_draft": 420,
+ "embargo_escolha": 0,
+ "flag_inicio": {
+  "cWRgrande": 200,
+  "cPROBSgrande": 200,
+  "bisolo": 400,
+  "bipro": 420,
+  "bisolo30": 400,
+  "bipro30": 420,
+  "bisolo35mais": 400,
+  "bipro35mais": 420
+ },
+ "min_hist": 50,
+ "conjuntos": [
+  "todas",
+  "so_INI"
+ ],
+ "n_acaso": 2000,
+ "min_linhas": 30,
+ "janela_recente": 300,
+ "metricas": {
+  "bsskill_todas": 1,
+  "llskill_todas": 1,
+  "brier_todas": -1,
+  "ll_todas": -1,
+  "bsskill_entradas": 1,
+  "llskill_entradas": 1,
+  "brier_entradas": -1,
+  "ll_entradas": -1,
+  "ppg": 1,
+  "lucro": 1,
+  "roi": 1,
+  "sharpe": 1,
+  "sortino": 1,
+  "calmar": 1,
+  "maxdd": -1,
+  "seq_ruim": -1,
+  "n_apostas": 1,
+  "n_linhas": 1,
+  "vol_ppg": -1,
+  "cobertura_modelo": 1,
+  "t_ppg": 1,
+  "t_bsskill_todas": 1,
+  "ppg_recente": 1,
+  "bsskill_recente": 1,
+  "queda_ppg": 1
+ },
+ "regras": [
+  "bsskill_todas",
+  "llskill_todas",
+  "brier_todas",
+  "ll_todas",
+  "bsskill_entradas",
+  "llskill_entradas",
+  "brier_entradas",
+  "ll_entradas",
+  "ppg",
+  "lucro",
+  "roi",
+  "sharpe",
+  "sortino",
+  "calmar",
+  "maxdd",
+  "seq_ruim",
+  {
+   "nome": "brier_com_roi>=0",
+   "ordenar": "brier_todas",
+   "filtros": [
+    [
+     "roi",
+     ">=",
+     0.0
+    ]
+   ],
+   "sem_candidato": "melhor_sem_filtro"
+  },
+  {
+   "nome": "bsskill_t_ppg>=1_relaxar",
+   "ordenar": "bsskill_todas",
+   "filtros": [
+    [
+     "t_ppg",
+     ">=",
+     1.0
+    ],
+    [
+     "n_apostas",
+     ">=",
+     40
+    ]
+   ],
+   "sem_candidato": "relaxar"
+  },
+  {
+   "nome": "ppg_nao_piorando_ou_nada",
+   "ordenar": "ppg",
+   "filtros": [
+    [
+     "queda_ppg",
+     ">=",
+     0.0
+    ]
+   ],
+   "sem_candidato": "nao_apostar"
+  },
+  {
+   "nome": "funcao_menor_vol",
+   "funcao": "função"
+  }
+ ],
+ "janelas": [
+  "propria",
+  "comum"
+ ],
+ "funis": [
+  {
+   "nome": "FIRST_10a35",
+   "politica": "FIRST",
+   "tempos": [
+    10,
+    15,
+    20,
+    25,
+    30,
+    35
+   ],
+   "minutos_criterio": [
+    10,
+    15,
+    20,
+    25,
+    30,
+    35
+   ]
+  },
+  {
+   "nome": "MULTI_10a35",
+   "politica": "MULTI",
+   "tempos": [
+    10,
+    15,
+    20,
+    25,
+    30,
+    35
+   ],
+   "minutos_criterio": [
+    10,
+    15,
+    20,
+    25,
+    30,
+    35
+   ]
+  }
+ ],
+ "periodos": [
+  [
+   "sujo",
+   200,
+   400
+  ],
+  [
+   "limpo_400_499",
+   400,
+   500
+  ],
+  [
+   "limpo_500_599",
+   500,
+   600
+  ],
+  [
+   "limpo_600_699",
+   600,
+   700
+  ]
+ ],
+ "opcoes": [
+  "TUDO_INI",
+  "TUDO_INI_CALR",
+  "TUDO_INI_CALR|bipro",
+  "TUDO_INI_CALR|bipro30",
+  "TUDO_INI_CALR|bipro35mais",
+  "TUDO_INI_CALR|bisolo",
+  "TUDO_INI_CALR|bisolo30",
+  "TUDO_INI_CALR|bisolo35mais",
+  "TUDO_INI_CALR|cPROBSgrande",
+  "TUDO_INI_CALR|cWRgrande",
+  "TUDO_INI|bipro",
+  "TUDO_INI|bipro30",
+  "TUDO_INI|bipro35mais",
+  "TUDO_INI|bisolo",
+  "TUDO_INI|bisolo30",
+  "TUDO_INI|bisolo35mais",
+  "TUDO_INI|cPROBSgrande",
+  "TUDO_INI|cWRgrande",
+  "TUDO_MOM",
+  "TUDO_MOM|bipro",
+  "TUDO_MOM|bipro30",
+  "TUDO_MOM|bipro35mais",
+  "TUDO_MOM|bisolo",
+  "TUDO_MOM|bisolo30",
+  "TUDO_MOM|bisolo35mais",
+  "TUDO_MOM|cPROBSgrande",
+  "TUDO_MOM|cWRgrande",
+  "V6E_INI",
+  "V6E_INI|bipro",
+  "V6E_INI|bipro30",
+  "V6E_INI|bipro35mais",
+  "V6E_INI|bisolo",
+  "V6E_INI|bisolo30",
+  "V6E_INI|bisolo35mais",
+  "V6E_INI|cPROBSgrande",
+  "V6E_INI|cWRgrande",
+  "V6E_MOM",
+  "V6E_MOM|bipro",
+  "V6E_MOM|bipro30",
+  "V6E_MOM|bipro35mais",
+  "V6E_MOM|bisolo",
+  "V6E_MOM|bisolo30",
+  "V6E_MOM|bisolo35mais",
+  "V6E_MOM|cPROBSgrande",
+  "V6E_MOM|cWRgrande",
+  "V6WR_INI",
+  "V6WR_INI|bipro",
+  "V6WR_INI|bipro30",
+  "V6WR_INI|bipro35mais",
+  "V6WR_INI|bisolo",
+  "V6WR_INI|bisolo30",
+  "V6WR_INI|bisolo35mais",
+  "V6WR_INI|cPROBSgrande",
+  "V6WR_INI|cWRgrande",
+  "V6WR_MOM",
+  "V6WR_MOM|bipro",
+  "V6WR_MOM|bipro30",
+  "V6WR_MOM|bipro35mais",
+  "V6WR_MOM|bisolo",
+  "V6WR_MOM|bisolo30",
+  "V6WR_MOM|bisolo35mais",
+  "V6WR_MOM|cPROBSgrande",
+  "V6WR_MOM|cWRgrande",
+  "V6_INI",
+  "V6_INI|bipro",
+  "V6_INI|bipro30",
+  "V6_INI|bipro35mais",
+  "V6_INI|bisolo",
+  "V6_INI|bisolo30",
+  "V6_INI|bisolo35mais",
+  "V6_INI|cPROBSgrande",
+  "V6_INI|cWRgrande",
+  "V6_MOM",
+  "V6_MOM|bipro",
+  "V6_MOM|bipro30",
+  "V6_MOM|bipro35mais",
+  "V6_MOM|bisolo",
+  "V6_MOM|bisolo30",
+  "V6_MOM|bisolo35mais",
+  "V6_MOM|cPROBSgrande",
+  "V6_MOM|cWRgrande"
+ ]
+}

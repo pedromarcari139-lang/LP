@@ -97,3 +97,10 @@ importar o paralelo_v90. Testes: P1 com um paralelo_v90 antigo SEM escolher_n na
 idênticos à rodada H0 e auditor OK; P3 com um processo filho quebrado de propósito — a rodada para com erro e mostra o log de quem falhou.
 O log real da Amanda mostrou que, com os dados reais, a leitura e TODAS as conferências passaram (lockbox: 0 linhas; 9 zz consistentes com o
 zz10 em 19 colunas; limpo == grande em 169 colunas; colunas/features presentes; 3.874 pares de treino 700–8447).
+
+## 9. v4.5 — só os minutos 10 a 35 (decisão do Pedro)
+Motivo: no log real, t45 tem 156 jogos e t40 685 em todo o histórico → modelos de 40/45 muito sobreajustados (EPV ≈ 2–3 no t45).
+Mudança: `TEMPOS_NOVOS = []`, funis FIRST_10a35 e MULTI_10a35, métricas nos minutos 10–35; o RODAR_FUNIL.bat confere zz10…zz35 (não pede mais
+zz5/40/45). Teste T (sintético, SEM os arquivos zz5/40/45 na pasta): roda; auditor A1–A8 TUDO OK; livro refeito à mão igual (183 e 704
+apostas); previsões 10–35 idênticas às da rodada com 5/40/45 (49.428 linhas). Os PPG mudam em relação às rodadas anteriores porque o universo
+de jogos executáveis passa a ser o dos minutos 10–35 (antes incluía jogos executáveis só no 5/40/45).

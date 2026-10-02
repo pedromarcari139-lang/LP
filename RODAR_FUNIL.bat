@@ -13,7 +13,7 @@ if not exist ".venv\Scripts\python.exe" (
   pause
   exit /b 1
 )
-for %%F in (zz5.xlsx zz40.xlsx zz45.xlsx) do (
+for %%F in (zz10.xlsx zz15.xlsx zz20.xlsx zz25.xlsx zz30.xlsx zz35.xlsx) do (
   if not exist "%%F" (
     echo  Falta %%F nesta pasta ^(mesmo banco dos outros zz^). Copie e rode de novo.
     pause

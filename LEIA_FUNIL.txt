@@ -1,23 +1,22 @@
-VALIDAR FUNIL (v4.4) — como rodar no PC da Amanda
+VALIDAR FUNIL (v4.5 — só os minutos 10 a 35) — como rodar no PC da Amanda
 ================================================
 
 O QUE É
   Um script NOVO, separado da rodada oficial. Não mexe em nada da etapa 1, não grava DECISAO e não prevê nenhum jogo >= 8448.
   Ele usa o motor (backtest_sujo.py / backtest_limpo.py), o .venv e a BANCO_PREVISOES que JÁ estão na pasta do RODAR.bat.
 
-O QUE COPIAR (4 arquivos deste zip + 3 planilhas)
+O QUE COPIAR (4 arquivos deste zip)
   1. Abra a pasta onde está o RODAR.bat (no PC da Amanda: C:\bt89c\bt89c — a mesma do .venv e da BANCO_PREVISOES).
   2. Cole ali: validar_funil.py, auditar_saidas.py, RODAR_FUNIL.bat e LEIA_FUNIL.txt (substitua os da versão anterior, se houver).
-  3. Cole também zz5.xlsx, zz40.xlsx e zz45.xlsx, exportados do MESMO banco dos outros zz (até o jogo 8447).
-     O script confere: cada um bate com o zz10 nos mesmos jogos (se não bater, PARA e diz em quê) e tem as colunas que as
+  3. Usa os zz10…zz35 (e zzl) que JÁ estão na pasta. NÃO precisa mais de zz5/zz40/zz45 (se estiverem lá, são ignorados).
+     O script confere: cada zz bate com o zz10 nos mesmos jogos (se não bater, PARA e diz em quê) e tem as colunas que as
      features e os flags precisam (se faltar, PARA e lista quais).
 
 COMO RODAR
   Dois cliques no RODAR_FUNIL.bat. Deixe a janela aberta (pode desligar a tela).
   No fim ele roda SOZINHO a auditoria independente (auditar_saidas.py). Se ela achar qualquer problema, a janela diz PAROU.
-  - Os minutos 10–35 vêm do banco da etapa 1 (se o C = 1.0 rodou lá, que é o padrão): não treinam de novo.
-  - Os minutos 5, 40 e 45 treinam do zero, a cada 2 jogos, desde o jogo 700. Tempo NÃO medido nesse PC (estimativa: algumas horas).
-    O que for treinado fica na BANCO_PREVISOES: se fechar a janela, na próxima vez ele continua quase de onde parou.
+  - Minutos 10, 15, 20, 25, 30, 35 (como na etapa 1). As previsões vêm do banco da etapa 1 se o C = 1.0 rodou lá (padrão) e os zz são os
+    mesmos; o que faltar é treinado a cada 2 jogos e fica na BANCO_PREVISOES (fechou a janela? na próxima continua quase de onde parou).
   - NÃO apague a BANCO_PREVISOES nem o .venv.
 
 O QUE TRAZER DE VOLTA
