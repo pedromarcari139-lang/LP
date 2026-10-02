@@ -89,3 +89,11 @@ Já era assim desde a v2 (o 6628 era da etapa 1 e da v1): `HIST_INICIO` = 1º jo
 de flag antes do início do flag (8 flags). Novo: `INICIO_PREVISOES` permite começar antes do 700. Teste H1 (INICIO_PREVISOES = 100 no sintético):
 previsões desde o jogo 100, previsões a partir do 200 IDÊNTICAS às do padrão (treinos vieram do banco: 2.000/2.400), 1ª decisão no par 152,
 auditor OK. Padrão (H0) idêntico à rodada G (`logs/comparacao_H0_vs_G.log`).
+
+## 8. v4.4 — erro no PC da Amanda: `paralelo_v90` sem `escolher_n`
+Causa: o validar_funil chamava `paralelo_v90.escolher_n`, que só existe na versão v9.0.1 desse arquivo; a pasta da Amanda tem outra versão.
+Erro MEU (dependência desnecessária). Correção: o paralelismo agora é do próprio validar_funil (`escolher_processos`, `rodar_filhos`), sem
+importar o paralelo_v90. Testes: P1 com um paralelo_v90 antigo SEM escolher_n na pasta (simula a Amanda) e P2 sem o arquivo — os dois
+idênticos à rodada H0 e auditor OK; P3 com um processo filho quebrado de propósito — a rodada para com erro e mostra o log de quem falhou.
+O log real da Amanda mostrou que, com os dados reais, a leitura e TODAS as conferências passaram (lockbox: 0 linhas; 9 zz consistentes com o
+zz10 em 19 colunas; limpo == grande em 169 colunas; colunas/features presentes; 3.874 pares de treino 700–8447).

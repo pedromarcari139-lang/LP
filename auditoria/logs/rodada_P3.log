@@ -1,0 +1,44 @@
+22:56:54 VALIDAR FUNIL v4.4 · regime draft sujo · C fixo 1.0 · treino a cada 2 · re-escolha a cada 2 · minutos [5, 10, 15, 20, 25, 30, 35, 40, 45] · histórico desde 200 · opções com draft desde 420 · flags (início): {'cWRgrande': 200, 'cPROBSgrande': 200, 'bisolo': 400, 'bipro': 420, 'bisolo30': 400, 'bipro30': 420, 'bisolo35mais': 400, 'bipro35mais': 420} · 20 regras · lockbox 700+ NUNCA previsto · períodos [('sujo', 200, 400), ('limpo_400_499', 400, 500), ('limpo_500_599', 500, 600), ('limpo_600_699', 600, 700)]
+22:56:54 motor sujo: famílias ['V6', 'TUDO', 'V6E', 'V6WR'] · CAL ['TUDO_INI'] · ATOM reconstrução VERIFICADA == app (Claude Code 22/09/2026: mesmos termos do certax V6 nos 6 minutos; 3.045.284 células com diferença 0,0; atomg.py SHA-256 1c6882fd…)
+22:56:54 t5: xlsx zz5.xlsx · 1398 linhas de desenvolvimento (gid < 700); 122 linhas do lockbox (ou sem gameid) descartadas na leitura
+22:56:55 t10: xlsx zz10.xlsx · 1398 linhas de desenvolvimento (gid < 700); 122 linhas do lockbox (ou sem gameid) descartadas na leitura
+22:56:56 t15: xlsx zz15.xlsx · 1398 linhas de desenvolvimento (gid < 700); 122 linhas do lockbox (ou sem gameid) descartadas na leitura
+22:56:57 t20: xlsx zz20.xlsx · 1398 linhas de desenvolvimento (gid < 700); 122 linhas do lockbox (ou sem gameid) descartadas na leitura
+22:56:58 t25: xlsx zz25.xlsx · 1398 linhas de desenvolvimento (gid < 700); 122 linhas do lockbox (ou sem gameid) descartadas na leitura
+22:56:59 t30: xlsx zz30.xlsx · 1174 linhas de desenvolvimento (gid < 700); 98 linhas do lockbox (ou sem gameid) descartadas na leitura
+22:56:59 t35: xlsx zz35.xlsx · 932 linhas de desenvolvimento (gid < 700); 78 linhas do lockbox (ou sem gameid) descartadas na leitura
+22:57:00 t40: xlsx zz40.xlsx · 682 linhas de desenvolvimento (gid < 700); 64 linhas do lockbox (ou sem gameid) descartadas na leitura
+22:57:00 t45: xlsx zz45.xlsx · 458 linhas de desenvolvimento (gid < 700); 50 linhas do lockbox (ou sem gameid) descartadas na leitura
+22:57:00 colunas dos zz: OK (features dos candidatos, preparar e flags, em todos os minutos)
+22:57:01 conferência entre minutos OK:
+    t5: 1398 linhas em comum com o zz10 (19 colunas iguais) · só no zz5: 0 · só no zz10: 0
+    t10: 1398 linhas em comum com o zz10 (19 colunas iguais)
+    t15: 1398 linhas em comum com o zz10 (19 colunas iguais) · só no zz15: 0 · só no zz10: 0
+    t20: 1398 linhas em comum com o zz10 (19 colunas iguais) · só no zz20: 0 · só no zz10: 0
+    t25: 1398 linhas em comum com o zz10 (19 colunas iguais) · só no zz25: 0 · só no zz10: 0
+    t30: 1174 linhas em comum com o zz10 (19 colunas iguais) · só no zz30: 0 · só no zz10: 224
+    t35: 932 linhas em comum com o zz10 (19 colunas iguais) · só no zz35: 0 · só no zz10: 466
+    t40: 682 linhas em comum com o zz10 (19 colunas iguais) · só no zz40: 0 · só no zz10: 716
+    t45: 458 linhas em comum com o zz10 (19 colunas iguais) · só no zz45: 0 · só no zz10: 940
+22:57:01 colunas dos zz: OK (features dos candidatos, preparar e flags, em todos os minutos)
+22:57:01 features V6_MOM t5 (5): side M_open g5 D_k5 M5
+22:57:01 features V6_MOM t10 (9): side M_open g5 D_k5 M5 g10 D_k10 M10 D_drake10
+22:57:01 features V6_MOM t15 (14): side M_open g5 D_k5 M5 g10 D_k10 M10 D_drake10 g15 D_k15 M15 D_drake15 D_tt15
+22:57:01 features V6_MOM t20 (19): side M_open g5 D_k5 M5 g10 D_k10 M10 D_drake10 g15 D_k15 M15 D_drake15 D_tt15 g20 D_k20 M20 D_drake20 D_tt20
+22:57:01 features V6_MOM t25 (24): side M_open g5 D_k5 M5 g10 D_k10 M10 D_drake10 g15 D_k15 M15 D_drake15 D_tt15 g20 D_k20 M20 D_drake20 D_tt20 g25 D_k25 M25 D_drake25 D_tt25
+22:57:01 features V6_MOM t30 (29): side M_open g5 D_k5 M5 g10 D_k10 M10 D_drake10 g15 D_k15 M15 D_drake15 D_tt15 g20 D_k20 M20 D_drake20 D_tt20 g25 D_k25 M25 D_drake25 D_tt25 g30 D_k30 M30 D_drake30 D_tt30
+22:57:01 features V6_MOM t35 (34): side M_open g5 D_k5 M5 g10 D_k10 M10 D_drake10 g15 D_k15 M15 D_drake15 D_tt15 g20 D_k20 M20 D_drake20 D_tt20 g25 D_k25 M25 D_drake25 D_tt25 g30 D_k30 M30 D_drake30 D_tt30 g35 D_k35 M35 D_drake35 D_tt35
+22:57:01 features V6_MOM t40 (39): side M_open g5 D_k5 M5 g10 D_k10 M10 D_drake10 g15 D_k15 M15 D_drake15 D_tt15 g20 D_k20 M20 D_drake20 D_tt20 g25 D_k25 M25 D_drake25 D_tt25 g30 D_k30 M30 D_drake30 D_tt30 g35 D_k35 M35 D_drake35 D_tt35 g40 D_k40 M40 D_drake40 D_tt40
+22:57:01 features V6_MOM t45 (44): side M_open g5 D_k5 M5 g10 D_k10 M10 D_drake10 g15 D_k15 M15 D_drake15 D_tt15 g20 D_k20 M20 D_drake20 D_tt20 g25 D_k25 M25 D_drake25 D_tt25 g30 D_k30 M30 D_drake30 D_tt30 g35 D_k35 M35 D_drake35 D_tt35 g40 D_k40 M40 D_drake40 D_tt40 g45 D_k45 M45 D_drake45 D_tt45
+22:57:01 motor sujo: 7 blocos de avaliação (200–699) → 250 pares de treino
+22:57:01 treino: 3 processo(s) ao mesmo tempo (automático: núcleos − 1 = 3 · memória total 15.7 GB ÷ 2.5 = 6 · 8 candidatos)
+22:57:01 3 processos iniciados (logs em /tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/fin_P3/OUT_FUNIL\funil_parte*.log)
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/fin_P3/validar_funil.py", line 1095, in <module>
+    if FILHO: main_filho(*FILHO)
+              ^^^^^^^^^^^^^^^^^^
+  File "/tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/fin_P3/validar_funil.py", line 698, in main_filho
+    if i == 1: raise RuntimeError('FALHA DE TESTE no filho 1')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: FALHA DE TESTE no filho 1
+1 processo(s) falharam: parte 1 (código 1, ver /tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/fin_P3/OUT_FUNIL/funil_parte1.log) — os que terminaram gravaram o treino no BANCO_PREVISOES (na próxima vez vem de lá)

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-validar_funil.py — v4.3 (02/10/2026: auditoria de vazamento + livro de apostas + INICIO_PREVISOES) — VALIDAÇÃO DO FUNIL com re-treino E re-escolha a cada 2 jogos, opções (modelo × flag),
+validar_funil.py — v4.4 (02/10/2026: auditoria de vazamento + livro de apostas + INICIO_PREVISOES + paralelismo próprio) — VALIDAÇÃO DO FUNIL com re-treino E re-escolha a cada 2 jogos, opções (modelo × flag),
 MÉTRICAS do histórico de cada opção, REGRAS de escolha (simples ou compostas) e avaliação de cada regra por lucro, RISCO,
 VOLATILIDADE e OVERFIT; Brier / log loss olhados de várias formas.
 
@@ -253,7 +253,7 @@ def conferir_tempos(B, brutos, ref=10):
         assert not ruins, f"zz{t} × zz{ref}: valores diferentes em {ruins} nas mesmas (gameid, side) — gameid renumerado? Nada foi treinado"
         so_t, so_r = len(G) - len(m), len(R) - len(m)
         if t > ref: assert so_t == 0, f"zz{t}: {so_t} linhas que não existem no zz{ref} — nada foi treinado"
-        linhas.append(f"t{t}: {len(m)} linhas em comum com o zz{ref} ({len(cc)} colunas iguais) · só no zz{t}: {so_t} · só no zz{ref}: {so_r}")
+        linhas.append(f"t{t}: {len(m)} linhas em comum com o zz{ref} ({len(cc)} colunas iguais)" + ("" if t == ref else f" · só no zz{t}: {so_t} · só no zz{ref}: {so_r}"))
     log("conferência entre minutos OK:\n    " + "\n    ".join(linhas))
 
 
@@ -704,9 +704,66 @@ def main_filho(i, n):
         pickle.dump(dict(preds=pd.concat(P, ignore_index=True) if P else pd.DataFrame(), fits=pd.concat(F, ignore_index=True) if F else pd.DataFrame(),
                          itens=[f"{tg}:{c[0]}" for tg, c in meus]), fh, protocol=pickle.HIGHEST_PROTOCOL)
     os.replace(arq + ".tmp", arq)
+
+
+# ---- paralelismo PRÓPRIO (v4.4): não depende da versão do paralelo_v90.py que estiver na pasta ----
+def _memoria_total_gb():
+    """memória física total em GB (Windows via kernel32; Linux via sysconf); None se não der para medir"""
     try:
-        import paralelo_v90 as PAR; log(f"pico de memória desta rodada: {PAR.pico_memoria_mb()} MB")
-    except Exception: pass
+        import ctypes
+        class _M(ctypes.Structure):
+            _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong), ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong), ("ullTotalVirtual", ctypes.c_ulonglong),
+                        ("ullAvailVirtual", ctypes.c_ulonglong), ("sullAvailExtendedVirtual", ctypes.c_ulonglong)]
+        m = _M(); m.dwLength = ctypes.sizeof(_M)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)): return m.ullTotalPhys / 2 ** 30
+    except Exception:
+        pass
+    try: return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 2 ** 30
+    except Exception: return None
+
+
+def escolher_processos(n_tarefas):
+    """quantos processos ao mesmo tempo: N_PROCESSOS > 0 fixo; 0 = min(núcleos − 1, memória total ÷ GB_POR_PROCESSO), no máximo o nº de candidatos"""
+    nuc = os.cpu_count() or 2; mem = _memoria_total_gb()
+    if N_PROCESSOS and int(N_PROCESSOS) > 0:
+        n = max(1, min(int(N_PROCESSOS), n_tarefas)); motivo = f"N_PROCESSOS = {int(N_PROCESSOS)} fixo"
+    else:
+        teto_mem = int(mem // GB_POR_PROCESSO) if mem else nuc - 1
+        n = max(1, min(nuc - 1, teto_mem, n_tarefas)); motivo = f"automático: núcleos − 1 = {nuc - 1} · memória total {mem:.1f} GB ÷ {GB_POR_PROCESSO:g} = {teto_mem}" if mem else f"automático: núcleos − 1 = {nuc - 1} (memória não medida)"
+    return n, motivo + f" · {n_tarefas} candidatos"
+
+
+def rodar_filhos(n):
+    """roda os n processos filhos (cada um treina os candidatos itens[i::n], com 1 thread numérica); progresso a cada 5 min; se algum falhar,
+    espera os outros terminarem (eles gravam o banco de previsões) e para com erro mostrando o fim do log de quem falhou"""
+    import subprocess
+    env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8", OMP_NUM_THREADS="1", MKL_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", NUMEXPR_NUM_THREADS="1")
+    procs = []
+    for i in range(n):
+        lg = os.path.join(OUT, f"funil_parte{i}.log"); fh = open(lg, "w", encoding="utf-8")
+        procs.append((i, subprocess.Popen([sys.executable, "-u", os.path.abspath(__file__), "--filho", str(i), str(n)], stdout=fh, stderr=subprocess.STDOUT, env=env, cwd=AQUI), fh, lg))
+    log(f"{n} processos iniciados (logs em {os.path.join(OUT, 'funil_parte*.log')})"); t0 = t_prog = time.time()
+    while any(p.poll() is None for _, p, _, _ in procs):
+        time.sleep(15)
+        if time.time() - t_prog >= 300:
+            t_prog = time.time()
+            for i, p, _, lg in procs:
+                if p.poll() is not None: continue
+                try: ult = [l.strip() for l in open(lg, encoding="utf-8", errors="replace") if "treinos feitos" in l][-1:] or ["(começando)"]
+                except Exception: ult = ["(sem log ainda)"]
+                log(f"   progresso parte {i} ({(time.time() - t0) / 60:.0f} min): {ult[0][:150]}")
+    falhas = []
+    for i, p, fh, lg in procs:
+        fh.close()
+        if p.returncode != 0: falhas.append((i, p.returncode, lg))
+    for i, rc, lg in falhas:
+        try: cauda = open(lg, encoding="utf-8", errors="replace").read().splitlines()[-25:]
+        except Exception: cauda = ["(não consegui ler o log)"]
+        print("\n".join(cauda), flush=True)
+    if falhas: raise SystemExit(f"{len(falhas)} processo(s) falharam: " + "; ".join(f"parte {i} (código {rc}, ver {lg})" for i, rc, lg in falhas)
+                                + " — os que terminaram gravaram o treino no BANCO_PREVISOES (na próxima vez vem de lá)")
+    log(f"processos terminados em {(time.time() - t0) / 60:.1f} min")
 
 
 
@@ -726,7 +783,7 @@ def main():
         elif "funcao" not in r: assert r["ordenar"] in METRICAS, f"regra {r['nome']}: ordenar '{r['ordenar']}' não é métrica"
     P = [(n, a, b) for n, a, b in (("sujo", hist_ini, G_CLEAN), (f"limpo_{G_CLEAN}_{BS.CFG['INICIO_TESTE'] - 1}", G_CLEAN, int(BS.CFG["INICIO_TESTE"])),
                                    (f"limpo_{BS.CFG['INICIO_TESTE']}_{CORTE_TESTE - 1}", int(BS.CFG["INICIO_TESTE"]), CORTE_TESTE), (f"limpo_{CORTE_TESTE}_{L0 - 1}", CORTE_TESTE, L0)) if b > a]
-    log(f"VALIDAR FUNIL v4.3 · regime draft {REGIME_DRAFT} · C fixo {C_FIXO} · treino a cada {PASSO} · re-escolha a cada {PASSO_ESCOLHA} · minutos {KS['todos']} · "
+    log(f"VALIDAR FUNIL v4.4 · regime draft {REGIME_DRAFT} · C fixo {C_FIXO} · treino a cada {PASSO} · re-escolha a cada {PASSO_ESCOLHA} · minutos {KS['todos']} · "
         f"histórico desde {hist_ini} · opções com draft desde {ini_draft} · flags (início): {flag_ini} · {len(regras)} regras · lockbox {L0}+ NUNCA previsto · períodos {P}")
     for tag, (B, K) in M.items(): log(f"motor {tag}: famílias {B.CFG['FAMILIAS']} · CAL {[c for c in B.CFG['CAL_PARA'] if c.split('_')[0] in B.CFG['FAMILIAS']]} · ATOM {B.ORIGEM_ATOM}")
     brutos = carregar_brutos(BS, KS, conferir=True)
@@ -736,12 +793,8 @@ def main():
     BL = blocos_por_motor(M, frames, hist_ini); itens = itens_de_treino(M)
     for tag in BL: log(f"motor {tag}: {len(BL[tag])} blocos de avaliação ({BL[tag][0][1]}–{BL[tag][-1][2] - 1}) → {len(_cortes(BL[tag])) - 1} pares de treino")
     # ---------------- previsões ----------------
-    n_pr = 1
-    if N_PROCESSOS != 1:
-        try:
-            import paralelo_v90 as PAR
-            n_pr, motivo = PAR.escolher_n(len(itens), N_PROCESSOS, GB_POR_PROCESSO); PAR.anunciar("funil (treino dividido por candidato)", n_pr, n_pr, motivo)
-        except ImportError: n_pr = 1
+    n_pr, motivo = escolher_processos(len(itens)) if N_PROCESSOS != 1 else (1, "N_PROCESSOS = 1 (em série)")
+    log(f"treino: {n_pr} processo(s) ao mesmo tempo ({motivo})")
     if n_pr <= 1:
         PS, FS = [], []
         for tag, (B, K) in M.items():
@@ -751,7 +804,7 @@ def main():
         del frames
         pasta = os.path.join(OUT, "_partes"); os.makedirs(pasta, exist_ok=True)
         for fn in os.listdir(pasta): os.remove(os.path.join(pasta, fn))
-        PAR.rodar_em_paralelo([(f"parte{i}", [os.path.abspath(__file__), "--filho", str(i), str(n_pr)]) for i in range(n_pr)], n_pr, "funil", OUT, cwd=AQUI)
+        rodar_filhos(n_pr)
         partes = [pickle.load(open(os.path.join(pasta, f"parte_{i}_de_{n_pr}.pkl"), "rb")) for i in range(n_pr)]
         assert sorted(x for p_ in partes for x in p_["itens"]) == sorted(f"{tg}:{c[0]}" for tg, c in itens), "partes não cobrem todos os candidatos"
         preds = pd.concat([p_["preds"] for p_ in partes if len(p_["preds"])], ignore_index=True); fits = pd.concat([p_["fits"] for p_ in partes if len(p_["fits"])], ignore_index=True)
@@ -980,7 +1033,7 @@ def main():
 def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info):
     f_ = lambda v, fmt="+.4f": "n/d" if v is None or (isinstance(v, float) and not np.isfinite(v)) else format(v, fmt)
     cad2 = f"a_cada_{PASSO_ESCOLHA}"
-    txt = [f"VALIDAÇÃO DO FUNIL v4.3 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
+    txt = [f"VALIDAÇÃO DO FUNIL v4.4 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
            f"{info['n_G']} jogos executáveis desde {info['hist_ini']} · opções com draft desde {info['ini_draft']}",
            f"Treino e re-escolha a cada {PASSO}/{PASSO_ESCOLHA} jogos, histórico ACUMULADO · PPG = lucro ÷ jogos executáveis · tudo nos MESMOS jogos dentro de cada (funil, janela) · "
            f"IC 95% bootstrap por cluster de 10 gameids",
