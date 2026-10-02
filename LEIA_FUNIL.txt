@@ -1,4 +1,4 @@
-VALIDAR FUNIL (v4.2 — livro de apostas do procedimento) — como rodar no PC da Amanda
+VALIDAR FUNIL (v4.3) — como rodar no PC da Amanda
 ================================================
 
 O QUE É
@@ -36,8 +36,16 @@ O QUE TRAZER DE VOLTA
     lucro_por_jogo.csv.gz, universo.csv.gz (a auditoria usa), jogos_comuns.csv.gz, previsoes_funil.csv.gz, ajustes_funil.csv.gz (maiores; tragam se couber)
   Se parar com erro: foto/cópia da mensagem da janela + a pasta OUT_FUNIL.
 
+QUE JOGOS ENTRAM (histórico INTEIRO, do início ao fim)
+  - jogos 1–699 ........ só treino (o 1º modelo precisa de jogos para aprender)
+  - 700 a ~999 ......... já previstos; formam o histórico mínimo (300 jogos) da 1ª escolha
+  - ~1000 a 8447 ....... a cada 2 jogos: escolha + apostas avaliadas (fase suja E fase limpa; resultado total e por período)
+  - fase suja (< 6028): só modelos SEM draft (V6, V6WR, V6E, V6WRE) e flags cWRgrande/cPROBSgrande
+  - modelos com draft (DRAFT, TUDO, DRAFTR) só a partir do 6115 (PRO capturado antes do jogo); bisolo* a partir do 6028, bipro* do 6115
+  - para começar antes do 700: INICIO_PREVISOES (ex.: 300). Os treinos a partir do 700 continuam vindo do banco.
+
 ONDE MUDAR AS COISAS (topo do validar_funil.py, bloco CONFIG)
-  C_FIXO, REGIME_DRAFT ("sujo" = DataFrame inteiro, padrão), FUNIS, BASELINE_MODELO, flags e seus inícios,
+  C_FIXO, INICIO_PREVISOES, REGIME_DRAFT ("sujo" = DataFrame inteiro, padrão), FUNIS, BASELINE_MODELO, flags e seus inícios,
   CONJUNTOS (todas as opções / só INI), N_ACASO, REGRAS (as 16 simples) e REGRAS_EXTRAS (regras compostas: ordenar + filtros + o que fazer se ninguém passar).
 
 SE APARECER "ATENÇÃO ... odds SEM margem/arbitragem" no log: anote os números — significa (jogo, minuto) com 1/odd_A + 1/odd_B < 1, o que não devia existir.

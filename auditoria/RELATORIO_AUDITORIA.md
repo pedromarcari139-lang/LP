@@ -82,3 +82,10 @@ Lacuna: até a v4.1 a escolha de cada par era gravada (trilhas), mas o lucro de 
 Provas (sintético): auditor **A8** — livro == lucro por par das trilhas == PPG e nº de apostas do resumo, 160 séries, 87.007 apostas, OK;
 `refazer_livro_a_mao.py` refaz as apostas dos zz crus + previsões sem usar o código do script: **iguais** nos 4 funis (185, 879, 186, 710 apostas);
 números do resumo idênticos à R0 (`logs/comparacao_G_vs_R0.log`).
+
+## 7. v4.3 — período avaliado = histórico inteiro (pergunta do Pedro)
+Já era assim desde a v2 (o 6628 era da etapa 1 e da v1): `HIST_INICIO` = 1º jogo previsto (700 na configuração real). Prova no sintético
+(onde 200 equivale ao 700): 1ª decisão no par 250, última no 698; 0 de 27.261 escolhas de opções com draft antes do início permitido; 0 escolhas
+de flag antes do início do flag (8 flags). Novo: `INICIO_PREVISOES` permite começar antes do 700. Teste H1 (INICIO_PREVISOES = 100 no sintético):
+previsões desde o jogo 100, previsões a partir do 200 IDÊNTICAS às do padrão (treinos vieram do banco: 2.000/2.400), 1ª decisão no par 152,
+auditor OK. Padrão (H0) idêntico à rodada G (`logs/comparacao_H0_vs_G.log`).

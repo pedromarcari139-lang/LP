@@ -1,0 +1,30 @@
+AUDITORIA INDEPENDENTE de /tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/fin_H1/OUT_FUNIL · lockbox 700 · PASSO 2 · PASSO_ESCOLHA 2 · MIN_HIST 50 · embargo 0
+[OK ] A1 nenhum jogo do lockbox nas saídas — 18 arquivos lidos
+[OK ] A2a treino termina antes do par (gid_treino_max < início do par) — 19344 treinos · folga mínima 1
+[OK ] A2b cada treino prevê um único par
+[OK ] A2c um treino por (motor, minuto, candidato, par)
+[OK ] A3 toda previsão tem o treino do seu par, terminado antes do par — 78626 previsões · 19344 (minuto, candidato, par)
+[OK ] A4a pares contíguos de <= PASSO_ESCOLHA jogos — 300 pares
+[OK ] A4b nº de opções elegíveis recalculado == gravado — 300 decisões sorteadas × conjuntos · 0 divergências
+[OK ] A4c a opção escolhida era elegível na decisão — 0 escolhas não elegíveis
+[OK ] A5 regras ppg/lucro/roi recalculadas do zero == trilhas (escolha e PPG histórico) — 13152 decisões conferidas em 48 combinações · 0 divergências
+[OK ] A6 PPG do procedimento 'ppg' recalculado == resumo_funil — 16 combinações · dif máx 1.11e-16
+[OK ] A8 livro de apostas == lucro por par das trilhas == PPG e nº de apostas do resumo; aposta só da opção escolhida no par — 160 séries (regra × funil × janela × conjunto) · 115774 apostas
+[OK ] A7 índices: último jogo do histórico e do treino < início do par — tabela em auditoria_indices.csv
+      funil  decisao_a par_jogos               escolhida janela_historico  ultimo_jogo_no_historico  jogos_no_historico_da_escolhida  opcoes_elegiveis  treino_da_previsao_usada_ate
+FIRST_10a35        110   110–111                     NaN                                        109                              NaN                 0                           NaN
+FIRST_10a35        172   172–173      V6WR_INI|cWRgrande       [100, 172)                       171                             71.0                18                         171.0
+FIRST_10a35        486   486–487   TUDO_INI_CALR|bipro30       [420, 486)                       485                             66.0                81                         485.0
+FIRST_10a35        546   546–547       V6E_MOM|cWRgrande       [100, 546)                       545                            445.0                81                         545.0
+FIRST_10a35        616   616–617 TUDO_INI_CALR|cWRgrande       [420, 616)                       615                            196.0                81                         615.0
+ FIRST_5a45        200   200–201                  V6_MOM       [100, 200)                       199                             99.0                18                         199.0
+ FIRST_5a45        262   262–263                 V6E_MOM       [100, 262)                       261                            161.0                18                         261.0
+ FIRST_5a45        272   272–273      V6WR_MOM|cWRgrande       [100, 272)                       271                            171.0                18                         271.0
+ FIRST_5a45        418   418–419        V6_MOM|cWRgrande       [100, 418)                       417                            317.0                18                         417.0
+ FIRST_5a45        586   586–587 TUDO_INI_CALR|cWRgrande       [420, 586)                       585                            166.0                81                         585.0
+MULTI_10a35        172   172–173                 V6E_MOM       [100, 172)                       171                             71.0                18                         171.0
+MULTI_10a35        690   690–691           TUDO_INI_CALR       [420, 690)                       689                            270.0                81                         689.0
+ MULTI_5a45        396   396–397                 V6E_MOM       [100, 396)                       395                            295.0                18                         395.0
+ MULTI_5a45        478   478–479    TUDO_INI_CALR|bisolo       [420, 478)                       477                             58.0                81                         477.0
+ MULTI_5a45        576   576–577    TUDO_INI_CALR|bisolo       [420, 576)                       575                            156.0                81                         575.0
+RESULTADO: TUDO OK
