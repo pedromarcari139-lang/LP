@@ -2,6 +2,7 @@
 # Uso: python _testes_funil/teste_regras.py   (da pasta do repositório)
 import os, sys, importlib.util
 import numpy as np
+import pandas as pd
 
 sp = importlib.util.spec_from_file_location("vf", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "validar_funil.py"))
 VF = importlib.util.module_from_spec(sp); sys.argv = ["x"]; sp.loader.exec_module(VF)
@@ -38,4 +39,16 @@ except AssertionError as e:
 G = np.array([10, 11, 12, 13, 14, 15]); D = dict(Lg=np.array([[1., 2, 3, 4, 5, 6], [-1, -1, -1, -1, -1, -1]]), E=np.ones((2, 6, 5)))
 lu, nb, esc, seg = VF.serie_procedimento(G, D, [(10, 12), (12, 14), (14, 16)], np.array([1, -2, -1]))
 confere("serie_procedimento: jogos avaliados", lu.index, [10, 11, 12, 13]); confere("serie_procedimento: lucro", lu.values, [-1, -1, 0, 0])
+# risco_por_aposta: −1 e +1 no MESMO jogo → por jogo soma 0 (DD 0), por aposta o DD é 1
+Dr = dict(bets=[dict(g=np.array([10, 10, 11]), t=np.array([5, 10, 5]), L=np.array([-1.0, 1.0, 0.5]))])
+r_ = VF.risco_por_aposta(Dr, np.array([0, 0]), np.array([10, 11])); confere("DD por aposta (−1,+1 no jogo 10)", [r_["maxdd_por_aposta"], r_["pior_seq_apostas_perdidas"]], [1.0, 1])
+r_ = VF.risco_serie(pd.Series([0.0, 0.5], index=[10, 11]), pd.Series([2, 1], index=[10, 11])); confere("DD por jogo do mesmo caso (esconde a perda)", [r_["maxdd"]], [0.0])
+# benchmarks: VIG por dutching perde SEMPRE 1/S − 1; jogo sem nenhuma odd na faixa fica fora; FAVORITO/ZEBRA respeitam a faixa
+info = pd.DataFrame(dict(t=[5] * 6, gameid=[10, 10, 11, 11, 12, 12], side=[1, 2] * 3, y=[1, 0, 0, 1, 1, 0], odd_t=[1.8, 2.1, 1.01, 30.0, 8.0, 9.0]))
+Gb = np.array([10, 11, 12]); Db = dict(Lg=np.zeros((0, 3)), E=np.zeros((0, 3, 5)))
+bn = VF.benchmarks(info, Gb, dict(politica="FIRST", tempos=[5]), dict(ODD_MIN=1.01, ODD_MAX=7.0), Db, [])
+vig = bn["VIG_MERCADO (dutching: perde a margem 1/S − 1)"][0]; S10, S11 = 1 / 1.8 + 1 / 2.1, 1 / 1.01 + 1 / 30
+confere("VIG dutching jogo 10, 11 = 1/S − 1; jogo 12 (8 e 9 fora da faixa) = 0", list(np.round(vig, 12)), list(np.round([1 / S10 - 1, 1 / S11 - 1, 0.0], 12)))
+confere("FAVORITO: 10 ganha 0,8; 11 perde 1 (odd 1,01 na faixa); 12 fora", list(np.round(bn["FAVORITO (todos os jogos)"][0], 12)), [0.8, -1.0, 0.0])
+confere("ZEBRA: 10 perde; 11 odd 30 FORA da faixa (sem aposta); 12 fora", list(np.round(bn["ZEBRA (todos os jogos)"][0], 12)), [-1.0, 0.0, 0.0])
 print(f"{ok} verificações OK")

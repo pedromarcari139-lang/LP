@@ -21,12 +21,18 @@ for %%F in (zz5.xlsx zz40.xlsx zz45.xlsx) do (
   )
 )
 ".venv\Scripts\python.exe" -u validar_funil.py
-set "RC=%ERRORLEVEL%"
+if errorlevel 1 goto :falhou
 echo.
-if "%RC%"=="0" (
-  echo  TERMINOU. Traga a pasta OUT_FUNIL ^(o essencial esta em OUT_FUNIL\RESUMO_FUNIL.txt^).
-) else (
-  echo  PAROU [codigo %RC%]. Tire uma foto/copie a mensagem acima e traga a pasta OUT_FUNIL.
-)
+echo  AUDITORIA INDEPENDENTE DAS SAIDAS ^(auditar_saidas.py^)...
+".venv\Scripts\python.exe" -u auditar_saidas.py OUT_FUNIL
+if errorlevel 1 goto :falhou
+echo.
+echo  TERMINOU ^(auditoria OK^). Traga a pasta OUT_FUNIL ^(o essencial esta em OUT_FUNIL\RESUMO_FUNIL.txt e OUT_FUNIL\AUDITORIA_SAIDAS.txt^).
 pause
-exit /b %RC%
+exit /b 0
+
+:falhou
+echo.
+echo  PAROU com erro. Tire uma foto/copie a mensagem acima e traga a pasta OUT_FUNIL.
+pause
+exit /b 1
