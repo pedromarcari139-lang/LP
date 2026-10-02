@@ -1,4 +1,4 @@
-VALIDAR FUNIL (v4.1 — depois da auditoria de vazamento) — como rodar no PC da Amanda
+VALIDAR FUNIL (v4.2 — livro de apostas do procedimento) — como rodar no PC da Amanda
 ================================================
 
 O QUE É
@@ -24,6 +24,8 @@ O QUE TRAZER DE VOLTA
   A pasta OUT_FUNIL inteira (ou pelo menos):
     AUDITORIA_SAIDAS.txt ............ resultado da auditoria independente (tem de terminar com TUDO OK)
     auditoria_indices.csv ........... índices de decisões sorteadas (treino/histórico < início do par)
+    apostas_procedimento.csv.gz ..... o LIVRO: cada aposta feita por cada regra (par, opção escolhida, minuto, lado, odd, p, resultado, lucro, acumulado)
+    trilhas.csv.gz .................. a cada par: opção escolhida por cada regra, valor da métrica, jogos/apostas/lucro do par
     RESUMO_FUNIL.txt ................ o essencial (regras × benchmarks, risco, overfit, MCS, Reality Check, Brier/log loss)
     resumo_funil.csv ................ todas as colunas de todas as regras e benchmarks
     comparar_regras.csv ............. Δ PPG de cada regra contra cada outra regra e contra cada benchmark
@@ -31,7 +33,7 @@ O QUE TRAZER DE VOLTA
     mom_vs_ini.csv .................. cada modelo fixo com × sem a odd do momento (MOM − INI), mesmos jogos
     mcs_reality_check.csv, pareado_2_vs_bloco.csv, conferencia_regras.csv, opcoes.csv, config_funil.json
     metricas_previsao_resumo.csv .... Brier / log loss: todas, flag=1, flag=0, entrou/não entrou, lado apostado
-    lucro_por_jogo.csv.gz, universo.csv.gz (a auditoria usa), trilhas.csv.gz, jogos_comuns.csv.gz, previsoes_funil.csv.gz, ajustes_funil.csv.gz (maiores; tragam se couber)
+    lucro_por_jogo.csv.gz, universo.csv.gz (a auditoria usa), jogos_comuns.csv.gz, previsoes_funil.csv.gz, ajustes_funil.csv.gz (maiores; tragam se couber)
   Se parar com erro: foto/cópia da mensagem da janela + a pasta OUT_FUNIL.
 
 ONDE MUDAR AS COISAS (topo do validar_funil.py, bloco CONFIG)

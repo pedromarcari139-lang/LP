@@ -13,6 +13,7 @@ Serve para a rodada sintética e para a rodada REAL (é só apontar para a OUT_F
   A5  as regras ppg / lucro / roi recalculadas DO ZERO (lucro_por_jogo + universo) em decisões sorteadas, nas janelas própria e comum,
       dão a MESMA escolha e o mesmo PPG histórico da escolhida que a trilha gravada
   A6  PPG do procedimento (regra ppg, a cada 2) recalculado das trilhas + lucro_por_jogo == o do resumo_funil.csv
+  A8  livro de apostas do procedimento (apostas_procedimento.csv.gz) == lucro por par das trilhas == PPG e nº de apostas do resumo
   A7  tabela de índices de decisões sorteadas: janela do histórico, último jogo do histórico, jogos do par, último jogo de treino da
       previsão usada — para conferir a olho (auditoria_indices.csv)
 USO: python auditar_saidas.py [pasta OUT_FUNIL]   → imprime e grava OUT_FUNIL/AUDITORIA_SAIDAS.txt; termina com erro se algo falhar.
@@ -139,6 +140,27 @@ d5 = sum(r[5] for r in res5); n5 = sum(r[4] for r in res5)
 checa("A5 regras ppg/lucro/roi recalculadas do zero == trilhas (escolha e PPG histórico)", d5 == 0, f"{n5} decisões conferidas em {len(res5)} combinações · {d5} divergências")
 d6 = max(abs(a - b) for (*_, a, b) in res6)
 checa("A6 PPG do procedimento 'ppg' recalculado == resumo_funil", d6 < 1e-9, f"{len(res6)} combinações · dif máx {d6:.2e}")
+
+# ---------- A8: livro de apostas do procedimento == lucro por par das trilhas == resumo final ----------
+fp_lv = os.path.join(PASTA, "apostas_procedimento.csv.gz")
+if os.path.exists(fp_lv):
+    LV = pd.read_csv(fp_lv); erros8, n8 = [], 0
+    for (fu, jan, conj, regra), lv in LV.groupby(["funil", "janela", "conjunto", "regra"]):
+        n8 += 1; js = JC[(JC.funil == fu) & (JC.janela == jan) & (JC.conjunto == conj)].gameid.values
+        r = R[(R.funil == fu) & (R.janela == jan) & (R.conjunto == conj) & (R.regra == regra) & (R.cadencia == f"a_cada_{PASSO_E}")].iloc[0]
+        if not set(lv.gameid) <= set(js): erros8.append(f"{fu}/{jan}/{conj}/{regra}: aposta fora dos jogos avaliados")
+        if abs(lv.lucro.sum() / len(js) - r.ppg) > 1e-9: erros8.append(f"{fu}/{jan}/{conj}/{regra}: livro {lv.lucro.sum() / len(js):+.6f} ≠ resumo {r.ppg:+.6f}")
+        if int(len(lv)) != int(r.n_apostas): erros8.append(f"{fu}/{jan}/{conj}/{regra}: {len(lv)} apostas no livro ≠ {int(r.n_apostas)} no resumo")
+        if abs(lv.lucro_acumulado.iloc[-1] - lv.lucro.sum()) > 1e-9: erros8.append(f"{fu}/{jan}/{conj}/{regra}: acumulado final ≠ soma")
+        tr = t2[(t2.funil == fu) & (t2.janela == jan) & (t2.conjunto == conj) & (t2.regra == regra)].set_index("a")
+        por_par = lv.groupby("par_a").lucro.sum(); dif = (tr.lucro_no_par.reindex(por_par.index) - por_par).abs().max()
+        if not (dif < 1e-9 and abs(tr.lucro_no_par.sum() - lv.lucro.sum()) < 1e-9): erros8.append(f"{fu}/{jan}/{conj}/{regra}: lucro por par das trilhas ≠ livro (dif {dif:.2e})")
+        esc_lv = lv.groupby("par_a").opcao.first(); esc_tr = tr.escolhida.reindex(esc_lv.index)
+        if not (esc_lv == esc_tr).all(): erros8.append(f"{fu}/{jan}/{conj}/{regra}: opção do livro ≠ escolhida na trilha")
+    checa("A8 livro de apostas == lucro por par das trilhas == PPG e nº de apostas do resumo; aposta só da opção escolhida no par", not erros8,
+          f"{n8} séries (regra × funil × janela × conjunto) · {len(LV)} apostas" + ("; " + "; ".join(erros8[:5]) if erros8 else ""))
+else:
+    checa("A8 livro de apostas presente", False, "apostas_procedimento.csv.gz não existe")
 
 # ---------- A7: índices de decisões sorteadas ----------
 rows = []

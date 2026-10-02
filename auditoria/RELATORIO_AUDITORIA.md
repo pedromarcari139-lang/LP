@@ -72,3 +72,13 @@ Arquivos: `configs/` (config_funil.json e o validar_funil.py EXATO de cada rodad
 - **ALTA CONFIANÇA (80–90%)**: as mesmas propriedades valem nos dados reais — o código é o mesmo, mas os dados reais podem ter formatos que o sintético não tem (texto em colunas, jogos com 1 lado, odds estranhas). Por isso o auditor roda sozinho no fim da rodada real.
 - **NÃO SEI**: se há jogos simultâneos além do par (ordem por gameid ≠ ordem real de término); se cWR/cPROBS/flags são mesmo só com o passado; se o PRO de backfill 6028–6114 carrega informação do resultado.
 - **0% de verificação empírica nos seus dados reais** — isso não é uma estimativa de probabilidade de leak; é só que não rodei nada com eles.
+
+## 6. v4.2 — resultados de 2 em 2 GUARDADOS (livro de apostas)
+Lacuna: até a v4.1 a escolha de cada par era gravada (trilhas), mas o lucro de cada par e as apostas do procedimento ficavam só na memória
+(a v1 gravava; a v2 deixou de gravar). Agora:
+- `trilhas.csv.gz` ganha `jogos_no_par`, `apostas_no_par`, `lucro_no_par` (da opção escolhida naquele par);
+- `apostas_procedimento.csv.gz` = LIVRO: cada aposta de cada regra (par, opção escolhida, minuto, lado, odd, p, q, edge, resultado, lucro, acumulado),
+  para as (janela, conjunto) de `SALVAR_APOSTAS` (padrão: própria e comum, todas as opções), cadência a cada 2.
+Provas (sintético): auditor **A8** — livro == lucro por par das trilhas == PPG e nº de apostas do resumo, 160 séries, 87.007 apostas, OK;
+`refazer_livro_a_mao.py` refaz as apostas dos zz crus + previsões sem usar o código do script: **iguais** nos 4 funis (185, 879, 186, 710 apostas);
+números do resumo idênticos à R0 (`logs/comparacao_G_vs_R0.log`).
