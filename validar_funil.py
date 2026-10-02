@@ -90,6 +90,7 @@ FUNIS = [   # nome, política, minutos em que pode apostar, minutos das métrica
 ]
 METRICAS_TEMPOS = _T_TODOS          # minutos das políticas no recorte entrou/não entrou das métricas de Brier/log loss
 CORTE_TESTE = 7729                  # só descritivo: períodos separados neste jogo
+BASELINE_MODELO = "V6_MOM"          # benchmark "modelo fixo": esta opção (sem flag) em TODOS os jogos, com a política do funil
 BLOCO_RISCO = 150                   # tamanho do bloco (jogos avaliados consecutivos) para % de blocos positivos e pior bloco
 USAR_BANCO = True
 N_PROCESSOS = 0                     # 0 = automático; 1 = em série. Não muda resultado
@@ -583,6 +584,39 @@ def overfit_serie(lu, esc_g, seg_g, G, js, M_ppg, ii, D, El, pos, blocos):
     return out
 
 
+def benchmarks(info, G, fu, cfg, D, nomes):
+    """BENCHMARKS (lucro e nº de apostas POR JOGO, posição em G), com a política e os minutos do funil e a faixa de odd do motor:
+    BASE_<modelo> = a opção BASELINE_MODELO (sem flag) em todos os jogos · FAVORITO / ZEBRA = 1 u no lado de menor / maior odd (FIRST: no
+    1º minuto do funil em que essa odd está na faixa ODD_MIN–ODD_MAX; MULTI: em todo minuto em que está) · VIG_MERCADO = ½ u em CADA lado
+    (perde exatamente a margem da casa: é o custo de apostar sem informação), nos mesmos minutos (FIRST: 1º minuto com os 2 lados válidos)."""
+    nG = len(G); out = {}
+    if BASELINE_MODELO in nomes:
+        j = nomes.index(BASELINE_MODELO); out[f"BASE_{BASELINE_MODELO} (fixo, sem flag)"] = (D["Lg"][j].copy(), D["E"][j, :, 0].copy(), j)
+    x = info[info["t"].isin(list(fu["tempos"])) & info["gameid"].isin(set(G.tolist()))][["t", "gameid", "side", "y", "odd_t"]].copy()
+    x["odd_t"] = pd.to_numeric(x["odd_t"], errors="coerce"); x = x[np.isfinite(x["odd_t"]) & (x["odd_t"] > 1)]
+    x = x[x.groupby(["t", "gameid"])["side"].transform("nunique") == 2].sort_values(["gameid", "t", "odd_t", "side"], kind="mergesort")
+    def por_jogo(d, L, n):
+        ix = np.searchsorted(G, d["gameid"].values); return np.bincount(ix, weights=L, minlength=nG), np.bincount(ix, weights=n, minlength=nG)
+    for nome, lado in (("FAVORITO (todos os jogos)", x.groupby(["gameid", "t"]).head(1)), ("ZEBRA (todos os jogos)", x.groupby(["gameid", "t"]).tail(1))):
+        d = lado[lado["odd_t"].between(cfg["ODD_MIN"], cfg["ODD_MAX"])].sort_values(["gameid", "t"], kind="mergesort")
+        if fu["politica"] == "FIRST": d = d.groupby("gameid").head(1)
+        out[nome] = por_jogo(d, np.where(d["y"].values == 1, d["odd_t"].values - 1.0, -1.0), np.ones(len(d))) + (None,)
+    w = x[x["y"] == 1].sort_values(["gameid", "t"], kind="mergesort")              # o lado vencedor em cada (jogo, minuto) com os 2 lados válidos
+    if fu["politica"] == "FIRST": w = w.groupby("gameid").head(1)
+    out["VIG_MERCADO (½ u em cada lado)"] = por_jogo(w, 0.5 * w["odd_t"].values - 1.0, np.ones(len(w))) + (None,)
+    return out
+
+
+def _brier_proc(D, ks, gi):
+    """Brier / log loss / skill das previsões 'todas' da opção escolhida em cada jogo (mesmas linhas que as métricas 'todas' usam)"""
+    ok = ks >= 0
+    if not ok.any(): return {}
+    t = D["T"][ks[ok], gi[ok]].sum(axis=0)
+    if t[0] <= 0: return {}
+    return dict(n_linhas_previsao=int(t[0]), brier_escolhida=t[3] / t[0], brier_mercado_mesmas_linhas=t[4] / t[0], bsskill_escolhida=(t[4] - t[3]) / t[0],
+                ll_escolhida=t[1] / t[0], ll_mercado_mesmas_linhas=t[2] / t[0], llskill_escolhida=(t[2] - t[1]) / t[0])
+
+
 # ---------------------------------------------------------------- processos ----------------------------------------------------------------
 def itens_de_treino(M):
     return [(tag, c) for tag, (B, K) in M.items() for c in B.candidatos()]
@@ -706,9 +740,10 @@ def main():
     SEG = {cad2: [(int(a), int(b)) for a, b in zip(cortes[:-1], cortes[1:])], "bloco_motor": [(int(g0), int(g1)) for (_, g0, g1) in BL["sujo"]]}
     a_all = np.array(sorted({a for s in SEG.values() for a, _ in s}), dtype=np.int64); pos = {int(a): i for i, a in enumerate(a_all)}
     El = elegiveis(G, opcoes, a_all, min_hist); rng = np.random.default_rng(int(BS.CFG["SEED"]))
-    linhas, pareados, trilhas, conf, comp, mcs_rows = [], [], [], [], [], []
+    linhas, pareados, trilhas, conf, comp, mcs_rows = [], [], [], [], [], []; jogos_comuns = []
     for fu in FUNIS:
         log(f"funil {fu['nome']}: somas por jogo de {len(opcoes)} opções…"); D = dados_funil(G, GMf, apostas_de, opcoes, fu)
+        BEN = benchmarks(info, G, fu, BS.CFG, D, nomes)
         for jan in JANELAS:
             Wd = janela_dec(opcoes, El, jan); Mx = matriz_metricas(D, opcoes, a_all, Wd)
             # -- conferência 1: conta rápida == conta direta (todas as métricas)
@@ -749,6 +784,7 @@ def main():
             comuns = None
             for (lu, *_r) in series.values(): comuns = set(lu.index) if comuns is None else comuns & set(lu.index)
             js = np.array(sorted(comuns), dtype=np.int64); gi = np.searchsorted(G, js)
+            jogos_comuns.append(pd.DataFrame(dict(funil=fu["nome"], janela=jan, gameid=js)))
             # referências: escolher ao acaso entre as elegíveis; melhor opção fixa em retrospecto
             ii2 = np.array([pos[a] for a, _ in SEG[cad2]]); ini2 = np.array([a for a, _ in SEG[cad2]]); sgi = np.clip(np.searchsorted(ini2, js, side="right") - 1, 0, None)
             Elg = El[ii2[sgi]]; ne = np.maximum(Elg.sum(1), 1)
@@ -757,6 +793,7 @@ def main():
             if len(sempre):
                 jb = sempre[np.argmax(D["Lg"][sempre][:, gi].sum(1))]
                 refs[f"FIXO_RETROSPECTO ({nomes[jb]}) — ENVIESADO"] = (pd.Series(D["Lg"][jb, gi], index=js), pd.Series(D["E"][jb, gi, 0], index=js))
+            for bn, (lg_, nb_, _j) in BEN.items(): refs[bn] = (pd.Series(lg_[gi], index=js), pd.Series(nb_[gi], index=js))
             for key, val in list(series.items()) + [((rn, "-"), sv + (None, None, None)) for rn, sv in refs.items()]:
                 (rn, cad), (lu, nb, esc_g, seg_g, ii) = key, val
                 lc, nc = lu.reindex(js), nb.reindex(js); r_ = _bt(BS, lc)
@@ -764,6 +801,8 @@ def main():
                 for (pn, pa, pb) in P:
                     m_, se_ = _media_se(lc[(js >= pa) & (js < pb)]); per[f"ppg_{pn}"] = m_; per[f"se_{pn}"] = se_
                 extra = dict(risco_serie(lc, nc))
+                if esc_g is not None: extra.update(_brier_proc(D, esc_g[gi], gi))
+                elif rn.startswith("BASE_") and BASELINE_MODELO in nomes: extra.update(_brier_proc(D, np.full(len(gi), nomes.index(BASELINE_MODELO)), gi))
                 if esc_g is not None:
                     ev = esc_g[gi]; evo = ev[ev >= 0]
                     extra.update(overfit_serie(lu, esc_g, seg_g, G, js, Mx["ppg"], ii, D, El, pos, BL["sujo"]))
@@ -780,7 +819,8 @@ def main():
                 for r2 in nomes_r:
                     if r1 >= r2: continue
                     m_, se_ = _media_se(Lr[r1] - Lr[r2]); comp.append(dict(funil=fu["nome"], janela=jan, regra_1=r1, regra_2=r2, n_jogos=len(js), delta_ppg=m_, se=se_, z=m_ / se_ if se_ and se_ > 0 else np.nan))
-                m_, se_ = _media_se(Lr[r1] - pd.Series(acaso, index=js)); comp.append(dict(funil=fu["nome"], janela=jan, regra_1=r1, regra_2="ACASO", n_jogos=len(js), delta_ppg=m_, se=se_, z=m_ / se_ if se_ and se_ > 0 else np.nan))
+                for rn_, (sr_, _nb) in refs.items():
+                    m_, se_ = _media_se(Lr[r1] - sr_.reindex(js)); comp.append(dict(funil=fu["nome"], janela=jan, regra_1=r1, regra_2=rn_.split(" ")[0], n_jogos=len(js), delta_ppg=m_, se=se_, z=m_ / se_ if se_ and se_ > 0 else np.nan))
             cl = BS._clu(js)
             try:
                 vivos, _ = BS.mcs(-Lr, cl, alpha=ALPHA_MCS, B=B_MCS)
@@ -798,11 +838,12 @@ def main():
         del D
     R = pd.DataFrame(linhas); PR = pd.DataFrame(pareados); MC = pd.DataFrame(mcs_rows)
     R.to_csv(os.path.join(OUT, "resumo_funil.csv"), index=False); PR.to_csv(os.path.join(OUT, "pareado_2_vs_bloco.csv"), index=False)
-    pd.DataFrame(comp).to_csv(os.path.join(OUT, "comparar_regras.csv"), index=False); MC.to_csv(os.path.join(OUT, "mcs_reality_check.csv"), index=False)
+    CP = pd.DataFrame(comp); CP.to_csv(os.path.join(OUT, "comparar_regras.csv"), index=False); MC.to_csv(os.path.join(OUT, "mcs_reality_check.csv"), index=False)
     pd.DataFrame(conf).to_csv(os.path.join(OUT, "conferencia_regras.csv"), index=False)
     pd.DataFrame(trilhas, columns=["funil", "janela", "regra", "cadencia", "a", "b", "opcoes_elegiveis", "escolhida", "valor_ordenacao", "ppg_historico_escolhida"]).to_csv(os.path.join(OUT, "trilhas.csv.gz"), index=False)
     pd.DataFrame(opcoes).to_csv(os.path.join(OUT, "opcoes.csv"), index=False)
-    escrever_resumo(R, PR, MC, MT, P, dict(regime=REGIME_DRAFT, C=C_FIXO, hist_ini=hist_ini, ini_draft=ini_draft, flag_ini=flag_ini, n_opcoes=len(opcoes), n_G=len(G), t0=t0, regras=nomes_r))
+    pd.concat(jogos_comuns, ignore_index=True).to_csv(os.path.join(OUT, "jogos_comuns.csv.gz"), index=False)
+    escrever_resumo(R, PR, MC, MT, P, CP, dict(regime=REGIME_DRAFT, C=C_FIXO, hist_ini=hist_ini, ini_draft=ini_draft, flag_ini=flag_ini, n_opcoes=len(opcoes), n_G=len(G), t0=t0, regras=nomes_r))
     json.dump(dict(regime=REGIME_DRAFT, motores={tag: hashlib.sha256(open(os.path.join(AQUI, ARQ_SUJO if tag == "sujo" else ARQ_LIMPO), "rb").read()).hexdigest() for tag in M},
                    script_sha256=hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest(), C_FIXO=C_FIXO, PASSO=PASSO, PASSO_ESCOLHA=PASSO_ESCOLHA,
                    tempos=KS["todos"], min_treino=KS["min_nov"], lockbox_serio=L0, hist_inicio=hist_ini, inicio_opcoes_draft=ini_draft, flag_inicio=flag_ini, min_hist=min_hist,
@@ -811,7 +852,7 @@ def main():
               open(os.path.join(OUT, "config_funil.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=str)
 
 
-def escrever_resumo(R, PR, MC, MT, P, info):
+def escrever_resumo(R, PR, MC, MT, P, CP, info):
     f_ = lambda v, fmt="+.4f": "n/d" if v is None or (isinstance(v, float) and not np.isfinite(v)) else format(v, fmt)
     cad2 = f"a_cada_{PASSO_ESCOLHA}"
     txt = [f"VALIDAÇÃO DO FUNIL v3 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
@@ -819,7 +860,9 @@ def escrever_resumo(R, PR, MC, MT, P, info):
            f"Treino e re-escolha a cada {PASSO}/{PASSO_ESCOLHA} jogos, histórico ACUMULADO · PPG = lucro ÷ jogos executáveis · tudo nos MESMOS jogos dentro de cada (funil, janela) · "
            f"IC 95% bootstrap por cluster de 10 gameids",
            f"Colunas: PPG [IC] · Δ vs mesma regra por bloco · ROI · Sharpe/jogo · maxDD (u) · % blocos de {BLOCO_RISCO} jogos positivos · otimismo (PPG prometido − realizado) · "
-           "percentil OOS (0,5 = acaso) · trocas · MCS (✓ = não se distingue da melhor) · mais escolhidas", ""]
+           "percentil OOS (0,5 = acaso) · trocas · MCS (✓ = não se distingue da melhor) · Δ PPG contra cada benchmark (z por cluster) · Brier skill das previsões escolhidas · mais escolhidas",
+           f"Benchmarks [ref]: BASE_{BASELINE_MODELO} = esse modelo sem flag em todos os jogos · FAVORITO / ZEBRA = 1 u no lado de menor / maior odd · VIG_MERCADO = ½ u em cada lado "
+           "(custo da margem) · ACASO = média das opções elegíveis · FIXO_RETROSPECTO = melhor opção olhando o resultado (teto ENVIESADO). Mesma política, minutos e faixa de odd do funil.", ""]
     for (fu, jan), r in R.groupby(["funil", "janela"], sort=False):
         mc = MC[(MC.funil == fu) & (MC.janela == jan)].iloc[0]
         txt.append(f"=== {fu} · janela {jan} · {int(mc.n_jogos)} jogos · Reality Check (alguma regra > acaso, corrigido pelas {int(mc.n_regras)} regras): p={f_(mc.rc_p_reality_check, '.4f')} "
@@ -829,9 +872,13 @@ def escrever_resumo(R, PR, MC, MT, P, info):
             pr = PR[(PR.funil == fu) & (PR.janela == jan) & (PR.regra == a.regra)].iloc[0]
             txt.append(f"   {a.regra:<28} {f_(a.ppg)} [{f_(a.ic_lo)}; {f_(a.ic_hi)}] · Δbloco {f_(pr.delta_ppg_2_menos_bloco, '+.3f')} · ROI {f_(a.get('roi'), '+.3f')} · "
                        f"Sh {f_(a.get('sharpe_jogo'), '+.3f')} · DD {f_(a.get('maxdd'), '.1f')} · blocos+ {f_(a.get('pct_blocos_positivos'), '.0%')} · otim {f_(a.get('otimismo'), '+.3f')} · "
-                       f"pctOOS {f_(a.get('percentil_oos_medio'), '.2f')} · trocas {int(a.trocas)} · {'✓' if a.get('no_MCS') else ' '} · {a.mais_escolhidas}")
+                       f"pctOOS {f_(a.get('percentil_oos_medio'), '.2f')} · trocas {int(a.trocas)} · {'✓' if a.get('no_MCS') else ' '} · "
+                       + " · ".join(f"Δ{b_} {f_(c_.delta_ppg, '+.3f')} (z {f_(c_.z, '+.1f')})" for b_ in (f"BASE_{BASELINE_MODELO}", "FAVORITO", "ZEBRA", "VIG_MERCADO", "ACASO")
+                                    for _, c_ in CP[(CP.funil == fu) & (CP.janela == jan) & (CP.regra_1 == a.regra) & (CP.regra_2 == b_)].iterrows())
+                       + f" · Brier skill das escolhidas {f_(a.get('bsskill_escolhida'), '+.5f')} · {a.mais_escolhidas}")
         for _, x in r[r.cadencia == "-"].iterrows():
-            txt.append(f"   {x.regra:<28} {f_(x.ppg)} [{f_(x.ic_lo)}; {f_(x.ic_hi)}] · ROI {f_(x.get('roi'), '+.3f')} · Sh {f_(x.get('sharpe_jogo'), '+.3f')} · DD {f_(x.get('maxdd'), '.1f')}")
+            txt.append(f"   [ref] {x.regra:<40} {f_(x.ppg)} [{f_(x.ic_lo)}; {f_(x.ic_hi)}] · ROI {f_(x.get('roi'), '+.3f')} · Sh {f_(x.get('sharpe_jogo'), '+.3f')} · DD {f_(x.get('maxdd'), '.1f')}"
+                       + (f" · Brier skill {f_(x.get('bsskill_escolhida'), '+.5f')}" if pd.notna(x.get("bsskill_escolhida", np.nan)) else ""))
         txt.append("   PPG por período (" + ", ".join(pn for pn, _, _ in P) + "): " + " | ".join(f"{a.regra} " + "/".join(f_(a[f'ppg_{pn}'], '+.3f') for pn, _, _ in P) for _, a in a2.head(5).iterrows()))
         txt.append("")
     t = MT[(MT["t"].astype(str) == "TODOS") & (MT["periodo"] == "TOTAL")]

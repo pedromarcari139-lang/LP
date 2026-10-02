@@ -1,0 +1,34 @@
+VALIDAR FUNIL (v3) — como rodar no PC da Amanda
+================================================
+
+O QUE É
+  Um script NOVO, separado da rodada oficial. Não mexe em nada da etapa 1, não grava DECISAO e não prevê nenhum jogo >= 8448.
+  Ele usa o motor (backtest_sujo.py / backtest_limpo.py), o .venv e a BANCO_PREVISOES que JÁ estão na pasta do RODAR.bat.
+
+O QUE COPIAR (3 arquivos deste zip + 3 planilhas)
+  1. Abra a pasta onde está o RODAR.bat (no PC da Amanda: C:\bt89c\bt89c — a mesma do .venv e da BANCO_PREVISOES).
+  2. Cole ali: validar_funil.py, RODAR_FUNIL.bat e LEIA_FUNIL.txt. Não precisa substituir nada (são arquivos novos).
+  3. Cole também zz5.xlsx, zz40.xlsx e zz45.xlsx, exportados do MESMO banco dos outros zz (até o jogo 8447).
+     O script confere: cada um bate com o zz10 nos mesmos jogos (se não bater, PARA e diz em quê) e tem as colunas que as
+     features e os flags precisam (se faltar, PARA e lista quais).
+
+COMO RODAR
+  Dois cliques no RODAR_FUNIL.bat. Deixe a janela aberta (pode desligar a tela).
+  - Os minutos 10–35 vêm do banco da etapa 1 (se o C = 1.0 rodou lá, que é o padrão): não treinam de novo.
+  - Os minutos 5, 40 e 45 treinam do zero, a cada 2 jogos, desde o jogo 700. Tempo NÃO medido nesse PC (estimativa: algumas horas).
+    O que for treinado fica na BANCO_PREVISOES: se fechar a janela, na próxima vez ele continua quase de onde parou.
+  - NÃO apague a BANCO_PREVISOES nem o .venv.
+
+O QUE TRAZER DE VOLTA
+  A pasta OUT_FUNIL inteira (ou pelo menos):
+    RESUMO_FUNIL.txt ................ o essencial (regras × benchmarks, risco, overfit, MCS, Reality Check, Brier/log loss)
+    resumo_funil.csv ................ todas as colunas de todas as regras e benchmarks
+    comparar_regras.csv ............. Δ PPG de cada regra contra cada outra regra e contra cada benchmark
+    mcs_reality_check.csv, pareado_2_vs_bloco.csv, conferencia_regras.csv, opcoes.csv, config_funil.json
+    metricas_previsao_resumo.csv .... Brier / log loss: todas, flag=1, flag=0, entrou/não entrou, lado apostado
+    trilhas.csv.gz, jogos_comuns.csv.gz, previsoes_funil.csv.gz, ajustes_funil.csv.gz (maiores; tragam se couber)
+  Se parar com erro: foto/cópia da mensagem da janela + a pasta OUT_FUNIL.
+
+ONDE MUDAR AS COISAS (topo do validar_funil.py, bloco CONFIG)
+  C_FIXO, REGIME_DRAFT ("sujo" = DataFrame inteiro, padrão), FUNIS, BASELINE_MODELO, flags e seus inícios,
+  REGRAS (as 16 simples) e REGRAS_EXTRAS (regras compostas: ordenar + filtros + o que fazer se ninguém passar).
