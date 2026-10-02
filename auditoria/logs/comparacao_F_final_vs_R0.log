@@ -1,0 +1,5 @@
+[OK ] previsões com gameid < 100000 idênticas (chaves e p) — 65674 linhas · max|Δp| = 0.00e+00
+      (controle) previsões com gameid >= 100000: 0 × 0 linhas
+[OK ] decisões com a <= 100000: escolha, nº de elegíveis e valores idênticos (todas as regras, funis, janelas, conjuntos, cadências) — 82240 decisões · 0 diferentes
+      (controle) decisões com a > 100000 cujo valor mudou: 0 de 0
+RESULTADO: TUDO OK

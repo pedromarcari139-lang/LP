@@ -1,0 +1,7 @@
+d151a67e41b78c512d2b2476ab056d85  fin_F/validar_funil.py
+cfe423dfcf0c824014f54e6ec78e6221  fin_R0/validar_funil.py
+cfe423dfcf0c824014f54e6ec78e6221  fin_R1/validar_funil.py
+cfe423dfcf0c824014f54e6ec78e6221  fin_R2/validar_funil.py
+ed9f41e0eedacb7ae1fe933facefd0bf  fin_R3/validar_funil.py
+4c16c31606d5663f9b6e5f950dd45fc3  fin_R4/validar_funil.py
+5b2a34fdcd73381019d122c35869f086  /home/user/LP/validar_funil.py

@@ -1,0 +1,6 @@
+    return walk_forward(frames, blocos, cands, cal_para, log_cada=len(blocos) + 1)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/mut_M3/backtest_sujo.py", line 706, in walk_forward
+    assert tr["gameid"].max() < g_lim <= g0 <= teste["gameid"].min(), "LEAK: treino alcança o bloco de teste (ou fura o embargo)"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: LEAK: treino alcança o bloco de teste (ou fura o embargo)

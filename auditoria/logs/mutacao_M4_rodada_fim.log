@@ -1,0 +1,6 @@
+    else: main()
+          ^^^^^^
+  File "/tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/mut_M4/validar_funil.py", line 798, in main
+    if dif_max > 1e-7: raise AssertionError(f"{tag}: conta rápida ≠ conta direta (dif relativa {dif_max:.2e}) — nada foi gravado")
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: FIRST_5a45/propria/todas: conta rápida ≠ conta direta (dif relativa 3.14e+01) — nada foi gravado

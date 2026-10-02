@@ -1,0 +1,5 @@
+R0 real	23m33.926s
+R1 real	23m17.144s
+R2 real	23m41.028s
+R3 real	17m27.106s
+R4 real	23m37.018s

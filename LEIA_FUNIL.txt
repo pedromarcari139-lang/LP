@@ -1,19 +1,20 @@
-VALIDAR FUNIL (v4) — como rodar no PC da Amanda
+VALIDAR FUNIL (v4.1 — depois da auditoria de vazamento) — como rodar no PC da Amanda
 ================================================
 
 O QUE É
   Um script NOVO, separado da rodada oficial. Não mexe em nada da etapa 1, não grava DECISAO e não prevê nenhum jogo >= 8448.
   Ele usa o motor (backtest_sujo.py / backtest_limpo.py), o .venv e a BANCO_PREVISOES que JÁ estão na pasta do RODAR.bat.
 
-O QUE COPIAR (3 arquivos deste zip + 3 planilhas)
+O QUE COPIAR (4 arquivos deste zip + 3 planilhas)
   1. Abra a pasta onde está o RODAR.bat (no PC da Amanda: C:\bt89c\bt89c — a mesma do .venv e da BANCO_PREVISOES).
-  2. Cole ali: validar_funil.py, RODAR_FUNIL.bat e LEIA_FUNIL.txt. Não precisa substituir nada (são arquivos novos).
+  2. Cole ali: validar_funil.py, auditar_saidas.py, RODAR_FUNIL.bat e LEIA_FUNIL.txt (substitua os da versão anterior, se houver).
   3. Cole também zz5.xlsx, zz40.xlsx e zz45.xlsx, exportados do MESMO banco dos outros zz (até o jogo 8447).
      O script confere: cada um bate com o zz10 nos mesmos jogos (se não bater, PARA e diz em quê) e tem as colunas que as
      features e os flags precisam (se faltar, PARA e lista quais).
 
 COMO RODAR
   Dois cliques no RODAR_FUNIL.bat. Deixe a janela aberta (pode desligar a tela).
+  No fim ele roda SOZINHO a auditoria independente (auditar_saidas.py). Se ela achar qualquer problema, a janela diz PAROU.
   - Os minutos 10–35 vêm do banco da etapa 1 (se o C = 1.0 rodou lá, que é o padrão): não treinam de novo.
   - Os minutos 5, 40 e 45 treinam do zero, a cada 2 jogos, desde o jogo 700. Tempo NÃO medido nesse PC (estimativa: algumas horas).
     O que for treinado fica na BANCO_PREVISOES: se fechar a janela, na próxima vez ele continua quase de onde parou.
@@ -21,6 +22,8 @@ COMO RODAR
 
 O QUE TRAZER DE VOLTA
   A pasta OUT_FUNIL inteira (ou pelo menos):
+    AUDITORIA_SAIDAS.txt ............ resultado da auditoria independente (tem de terminar com TUDO OK)
+    auditoria_indices.csv ........... índices de decisões sorteadas (treino/histórico < início do par)
     RESUMO_FUNIL.txt ................ o essencial (regras × benchmarks, risco, overfit, MCS, Reality Check, Brier/log loss)
     resumo_funil.csv ................ todas as colunas de todas as regras e benchmarks
     comparar_regras.csv ............. Δ PPG de cada regra contra cada outra regra e contra cada benchmark
@@ -28,9 +31,11 @@ O QUE TRAZER DE VOLTA
     mom_vs_ini.csv .................. cada modelo fixo com × sem a odd do momento (MOM − INI), mesmos jogos
     mcs_reality_check.csv, pareado_2_vs_bloco.csv, conferencia_regras.csv, opcoes.csv, config_funil.json
     metricas_previsao_resumo.csv .... Brier / log loss: todas, flag=1, flag=0, entrou/não entrou, lado apostado
-    trilhas.csv.gz, jogos_comuns.csv.gz, previsoes_funil.csv.gz, ajustes_funil.csv.gz (maiores; tragam se couber)
+    lucro_por_jogo.csv.gz, universo.csv.gz (a auditoria usa), trilhas.csv.gz, jogos_comuns.csv.gz, previsoes_funil.csv.gz, ajustes_funil.csv.gz (maiores; tragam se couber)
   Se parar com erro: foto/cópia da mensagem da janela + a pasta OUT_FUNIL.
 
 ONDE MUDAR AS COISAS (topo do validar_funil.py, bloco CONFIG)
   C_FIXO, REGIME_DRAFT ("sujo" = DataFrame inteiro, padrão), FUNIS, BASELINE_MODELO, flags e seus inícios,
   CONJUNTOS (todas as opções / só INI), N_ACASO, REGRAS (as 16 simples) e REGRAS_EXTRAS (regras compostas: ordenar + filtros + o que fazer se ninguém passar).
+
+SE APARECER "ATENÇÃO ... odds SEM margem/arbitragem" no log: anote os números — significa (jogo, minuto) com 1/odd_A + 1/odd_B < 1, o que não devia existir.

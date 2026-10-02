@@ -47,3 +47,28 @@ Encurtar o "teste" para 2 jogos **não cria vazamento por si só** (cada par con
 - **Overfitting de pesquisa**: os jogos 6628–8447 já foram vistos várias vezes; famílias, features, flags, minutos, EDGE_MIN, faixa de odd foram decididos olhando dados. A validação do funil nesses jogos é **otimista** por construção.
 - **Comparações múltiplas**: 20 regras × 4 funis × 2 janelas × 2 conjuntos × 2 cadências + referências. MCS/Reality Check corrigem só **dentro** de cada (funil, janela, conjunto).
 - **Bootstrap por cluster de 10 gameids** supõe independência entre clusters.
+
+## 4. Testes executados (todos com dados SINTÉTICOS; código final v4.1)
+
+| teste | o que prova | resultado | log |
+|---|---|---|---|
+| R0 base (regime sujo) + auditor A1–A7 | índices de treino/previsão/escolha; recálculo independente | **TUDO OK**: 16.168 treinos, folga mínima 1; 65.674 previsões com o treino do seu par; 10.800 decisões recalculadas do zero, 0 divergências | `logs/rodada_R0.log`, `logs/auditor_R0.log` |
+| R1 sabotagem de ponta a ponta: jogos ≥ 600 com TODAS as colunas trocadas (odds, flags, resultado, estado), 30% desses jogos apagados, texto lixo no lockbox | nada do futuro chega ao passado (treino, features, calibração _CALR, escolha) | **0 diferenças**: 52.336 previsões < 600 com Δp = 0; 66.240 decisões com a ≤ 600 idênticas · controle: 15.993/16.000 decisões depois do 600 mudaram | `logs/comparacao_R1_sabotagem_vs_R0.log` |
+| R2 sem as linhas do lockbox (gid ≥ 700 no teste) | o lockbox não influi em NADA | **idêntico**: previsões, 82.240 decisões, resumo (848×55), métricas de Brier (2.694×17), comparações (7.200×9), distribuição do acaso — Δ máx 0 | `logs/comparacao_R2_lockbox_vs_R0.log` |
+| R3 regime limpo + auditor | o regime alternativo também passa | TUDO OK | `logs/auditor_R3.log` |
+| R4 EMBARGO_ESCOLHA = 2 + auditor | o embargo funciona e o auditor o respeita | TUDO OK | `logs/auditor_R4.log` |
+| F código final (só texto + aviso) × R0 | a última edição não mudou números | idêntico (Δ máx 0) | `logs/comparacao_F_final_vs_R0.log` |
+| Mutação M1: histórico inclui o 1º jogo do par | o auditor pega vazamento que as conferências internas não pegam | script NÃO pegou; **auditor pegou** (A5: 3.953 divergências) | `logs/mutacao_M1_auditor.log` |
+| Mutação M2: jogos do lockbox no universo | idem | script NÃO pegou (antes dos asserts novos); **auditor pegou** (A1) | `logs/mutacao_M2_auditor.log` |
+| Mutação M3: treino alcança o par | guarda do motor | **motor abortou** ("LEAK: treino alcança o bloco de teste") | `logs/mutacao_M3_rodada_fim.log` |
+| Mutação M4: escolha com o período inteiro | conferência interna | **script abortou** (conta rápida ≠ direta) | `logs/mutacao_M4_rodada_fim.log` |
+| Teste unitário (15 verificações) | regras simples/compostas/função, "não apostar", DD por aposta, VIG dutching, faixa de odd | 15/15 | `logs/teste_unitario_regras.log` |
+
+Arquivos: `configs/` (config_funil.json e o validar_funil.py EXATO de cada rodada, com md5 em `md5_scripts_usados.txt`), `dados/` (zz sintéticos base, sabotado e truncado),
+`resultados_R0/` (resumo, auditoria de índices, Brier, comparações). Geradores: `gerar_zz_sinteticos.py`, `gerar_variantes.py`; comparação: `comparar_rodadas.py`.
+
+## 5. Grau de confiança (honesto)
+- **VERIFICADO (95–99%) — no sintético**: treino só com jogos anteriores ao par; escolha só com o histórico anterior; o futuro (inclusive odds e calibração) não muda nada do passado; o lockbox não influi; as contas das regras ppg/lucro/roi batem com um recálculo independente.
+- **ALTA CONFIANÇA (80–90%)**: as mesmas propriedades valem nos dados reais — o código é o mesmo, mas os dados reais podem ter formatos que o sintético não tem (texto em colunas, jogos com 1 lado, odds estranhas). Por isso o auditor roda sozinho no fim da rodada real.
+- **NÃO SEI**: se há jogos simultâneos além do par (ordem por gameid ≠ ordem real de término); se cWR/cPROBS/flags são mesmo só com o passado; se o PRO de backfill 6028–6114 carrega informação do resultado.
+- **0% de verificação empírica nos seus dados reais** — isso não é uma estimativa de probabilidade de leak; é só que não rodei nada com eles.

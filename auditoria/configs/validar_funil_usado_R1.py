@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-validar_funil.py — v4.1 (02/10/2026, auditoria de vazamento) — VALIDAÇÃO DO FUNIL com re-treino E re-escolha a cada 2 jogos, opções (modelo × flag),
+validar_funil.py — v4 (02/10/2026) — VALIDAÇÃO DO FUNIL com re-treino E re-escolha a cada 2 jogos, opções (modelo × flag),
 MÉTRICAS do histórico de cada opção, REGRAS de escolha (simples ou compostas) e avaliação de cada regra por lucro, RISCO,
 VOLATILIDADE e OVERFIT; Brier / log loss olhados de várias formas.
 
@@ -48,18 +48,18 @@ import pandas as pd
 REGIME_DRAFT = "sujo"               # "sujo" (padrão: DataFrame inteiro no treino, draft vira opção na fase limpa) | "limpo" (ver acima)
 ARQ_SUJO, ARQ_LIMPO = "backtest_sujo.py", "backtest_limpo.py"
 C_FIXO = 1.0                        # C ÚNICO. 1.0 = valor a priori (padrão do sklearn; está na grade → banco). O C da etapa 1 foi escolhido com estes jogos (otimista)
-LOCKBOX_SERIO = 8448                # nada >= este gid é previsto
+LOCKBOX_SERIO = 700                # nada >= este gid é previsto
 PASSO = 2                           # re-treino a cada PASSO gameids
 PASSO_ESCOLHA = 2                   # re-escolha a cada PASSO_ESCOLHA gameids (múltiplo de PASSO)
 TEMPOS_NOVOS = [5, 40, 45]
-MIN_TREINO_NOVOS = {5: 150, 40: 120, 45: 120}
+MIN_TREINO_NOVOS = {5: 60, 40: 60, 45: 40}
 HIST_INICIO = None                  # None = INICIO_TESTE_SUJO do motor (700): a fase suja entra no funil (opções sem draft, flags de WR)
 INICIO_OPCOES_DRAFT = None          # None = max(G_CLEAN, PRO_LIVE_FROM) = 6115 no regime sujo (AUDITORIA 02/10: no modo sujo o motor NÃO mascara o PRO de
                                     #        backfill 6028–6114 e todo modelo com draft usa l_PRO*; antes de 6115 a previsão deles usa PRO de backfill);
                                     #        INICIO_TESTE (6628) no regime limpo
 EMBARGO_ESCOLHA = 0                 # a escolha antes do par [a, a+2) usa só jogos < a − EMBARGO_ESCOLHA (0 = supõe que o par anterior já terminou;
                                     # use 2 ou mais se houver mais de 2 jogos ao mesmo tempo). O TREINO dos modelos tem o seu próprio (EMBARGO_JOGOS do motor)
-MIN_HIST = None                     # None = SELECAO_MIN_HIST_JOGOS (300): opção só é elegível com >= isto de jogos executáveis na própria janela
+MIN_HIST = 50                     # None = SELECAO_MIN_HIST_JOGOS (300): opção só é elegível com >= isto de jogos executáveis na própria janela
 MIN_LINHAS = 30                     # métricas de linhas/apostas (todas*, entradas*, roi, sharpe, sortino, maxdd, seq_ruim, calmar, t_*) exigem >= isto
 JANELA_RECENTE = 300                # métricas "_recente": só os últimos N jogos executáveis da janela
 FLAGS_SUJO = ["cWRgrande", "cPROBSgrande"]
@@ -81,7 +81,11 @@ METRICAS = {
 SENTIDO = dict(METRICAS)
 REGRAS = ["bsskill_todas", "llskill_todas", "brier_todas", "ll_todas", "bsskill_entradas", "llskill_entradas", "brier_entradas", "ll_entradas",
           "ppg", "lucro", "roi", "sharpe", "sortino", "calmar", "maxdd", "seq_ruim"]            # as 16 regras simples de hoje (uma por métrica)
-REGRAS_EXTRAS = [                                                                              # regras COMPOSTAS (vazio = só as simples). Exemplos:
+REGRAS_EXTRAS = [
+    dict(nome="brier_com_roi>=0", ordenar="brier_todas", filtros=[("roi", ">=", 0.0)], sem_candidato="melhor_sem_filtro"),
+    dict(nome="bsskill_t_ppg>=1_relaxar", ordenar="bsskill_todas", filtros=[("t_ppg", ">=", 1.0), ("n_apostas", ">=", 40)], sem_candidato="relaxar"),
+    dict(nome="ppg_nao_piorando_ou_nada", ordenar="ppg", filtros=[("queda_ppg", ">=", 0.0)], sem_candidato="nao_apostar"),
+    dict(nome="funcao_menor_vol", funcao=lambda M, El: __import__("numpy").where(El.any(1), __import__("numpy").argmax(__import__("numpy").where(El & __import__("numpy").isfinite(M["vol_ppg"]), -M["vol_ppg"], -__import__("numpy").inf), 1), -1)),                                                                              # regras COMPOSTAS (vazio = só as simples). Exemplos:
     # dict(nome="brier_com_roi>=2%", ordenar="brier_todas", filtros=[("roi", ">=", 0.02)], sem_candidato="melhor_sem_filtro"),
     # dict(nome="bsskill_com_t_ppg>=1_e_100apostas", ordenar="bsskill_todas", filtros=[("t_ppg", ">=", 1.0), ("n_apostas", ">=", 100)], sem_candidato="relaxar"),
     # dict(nome="ppg_se_nao_esta_piorando", ordenar="ppg", filtros=[("queda_ppg", ">=", 0.0)], sem_candidato="nao_apostar"),
@@ -102,21 +106,21 @@ FUNIS = [   # nome, política, minutos em que pode apostar, minutos das métrica
     dict(nome="MULTI_10a35", politica="MULTI", tempos=_T_ANT,   minutos_criterio=_T_ANT),
 ]
 METRICAS_TEMPOS = _T_TODOS          # minutos das políticas no recorte entrou/não entrou das métricas de Brier/log loss
-CORTE_TESTE = 7729                  # só descritivo: períodos separados neste jogo
+CORTE_TESTE = 600                  # só descritivo: períodos separados neste jogo
 BASELINE_MODELO = "V6_MOM"          # benchmark "modelo fixo": esta opção (sem flag) em TODOS os jogos, com a política do funil
 BLOCO_RISCO = 150                   # tamanho do bloco (jogos avaliados consecutivos) para % de blocos positivos e pior bloco
 USAR_BANCO = True
-N_PROCESSOS = 0                     # 0 = automático; 1 = em série. Não muda resultado
+N_PROCESSOS = int(__import__('os').environ.get('NPR', '1'))                     # 0 = automático; 1 = em série. Não muda resultado
 GB_POR_PROCESSO = 2.5
-VERIFICAR_LIMPO = True
-B_BOOT = 5000                       # bootstrap por cluster de 10 gameids dos IC de PPG
+VERIFICAR_LIMPO = False
+B_BOOT = 300                       # bootstrap por cluster de 10 gameids dos IC de PPG
 B_MCS = 2000                        # réplicas do Model Confidence Set entre as regras
 B_RC = 5000                         # réplicas do Reality Check (alguma regra bate a escolha ao acaso?)
 ALPHA_MCS = 0.10
 CONFERENCIA_N = 12                  # decisões sorteadas por (funil, janela) para conferir a conta rápida contra a conta direta
 SABOTAGEM_N = 3                     # decisões sorteadas por (funil, janela) em que o futuro é trocado por ruído (nenhuma regra pode mudar a escolha)
 PASTA_SAIDA = "OUT_FUNIL"
-CFG_EXTRA = {}                      # vazio no uso normal (só para testes)
+CFG_EXTRA = dict(G_CLEAN=400, INICIO_TESTE=500, INICIO_TESTE_SUJO=200, BLOCO_JOGOS=50, BLOCO_JOGOS_SUJO=100, MIN_TREINO_JOGOS={10:60,15:60,20:60,25:60,30:60,35:50}, FAMILIAS=['V6','TUDO','V6E','V6WR'], CAL_PARA=['TUDO_INI'], SELECAO_INICIO_AVALIACAO=500, SELECAO_MIN_HIST_JOGOS=50, PRO_LIVE_FROM=420)                      # vazio no uso normal (só para testes)
 # ========================================================================
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
@@ -635,7 +639,7 @@ def benchmarks(info, G, fu, cfg, D, nomes):
     BASE_<modelo> = a opção BASELINE_MODELO (sem flag) em todos os jogos · FIXO_<modelo> = cada modelo (sem flag) fixo, inclusive os INI (sem a odd
     do momento); um modelo que só existe na fase limpa tem lucro 0 antes de existir · FAVORITO / ZEBRA = 1 u no lado de menor / maior odd (FIRST: no
     1º minuto do funil em que essa odd está na faixa ODD_MIN–ODD_MAX; MULTI: em todo minuto em que está) · VIG_MERCADO = dutching (1 u dividida
-    na proporção 1/odd: lucro 1/S − 1 = −margem da casa, igual qualquer que seja o vencedor; FIRST: 1º minuto executável; MULTI: todo minuto executável)."""
+    na proporção 1/odd: perde SEMPRE 1 − 1/S, a margem da casa; FIRST: 1º minuto executável; MULTI: todo minuto executável)."""
     nG = len(G); out = {}
     if BASELINE_MODELO in nomes:
         j = nomes.index(BASELINE_MODELO); out[f"BASE_{BASELINE_MODELO} (fixo, sem flag)"] = (D["Lg"][j].copy(), D["E"][j, :, 0].copy(), j)
@@ -651,13 +655,10 @@ def benchmarks(info, G, fu, cfg, D, nomes):
         if fu["politica"] == "FIRST": d = d.groupby("gameid").head(1)
         out[nome] = por_jogo(d, np.where(d["y"].values == 1, d["odd_t"].values - 1.0, -1.0), np.ones(len(d))) + (None,)
     # VIG_MERCADO (AUDITORIA 02/10 — antes era ½ u em cada lado, cujo retorno VARIA com o vencedor): "dutching" = 1 u dividida entre os 2 lados
-    # na proporção 1/odd, de modo que qualquer vencedor paga o mesmo: retorno = 1/S, S = 1/odd_A + 1/odd_B ⇒ lucro = 1/S − 1 = −margem (negativo
-    # sempre que as odds têm margem, S > 1; S < 1 seria odd de arbitragem — o log avisa quantos (jogo, minuto) estão assim).
+    # na proporção 1/odd, de modo que qualquer vencedor paga o mesmo: retorno = 1/S, S = 1/odd_A + 1/odd_B ⇒ lucro = 1/S − 1 (= −margem, SEMPRE).
     # Só em (jogo, minuto) que o universo executável aceitaria: os 2 lados com odd > 1 e pelo menos um na faixa ODD_MIN–ODD_MAX.
     S = x.groupby(["gameid", "t"]).agg(S=("odd_t", lambda o: float(np.sum(1.0 / o.values))), na_faixa=("odd_t", lambda o: bool(o.between(cfg["ODD_MIN"], cfg["ODD_MAX"]).any()))).reset_index()
     S = S[S["na_faixa"]].sort_values(["gameid", "t"], kind="mergesort")
-    n_arb = int((S["S"] < 1).sum())
-    if n_arb: log(f"ATENÇÃO {fu['nome']}: {n_arb} (jogo, minuto) executáveis com 1/odd_A + 1/odd_B < 1 (odds SEM margem/arbitragem) — confira as odds desses jogos")
     if fu["politica"] == "FIRST": S = S.groupby("gameid").head(1)
     out["VIG_MERCADO (dutching: perde a margem 1/S − 1)"] = por_jogo(S, 1.0 / S["S"].values - 1.0, np.ones(len(S))) + (None,)
     return out
@@ -718,7 +719,7 @@ def main():
         elif "funcao" not in r: assert r["ordenar"] in METRICAS, f"regra {r['nome']}: ordenar '{r['ordenar']}' não é métrica"
     P = [(n, a, b) for n, a, b in (("sujo", hist_ini, G_CLEAN), (f"limpo_{G_CLEAN}_{BS.CFG['INICIO_TESTE'] - 1}", G_CLEAN, int(BS.CFG["INICIO_TESTE"])),
                                    (f"limpo_{BS.CFG['INICIO_TESTE']}_{CORTE_TESTE - 1}", int(BS.CFG["INICIO_TESTE"]), CORTE_TESTE), (f"limpo_{CORTE_TESTE}_{L0 - 1}", CORTE_TESTE, L0)) if b > a]
-    log(f"VALIDAR FUNIL v4.1 · regime draft {REGIME_DRAFT} · C fixo {C_FIXO} · treino a cada {PASSO} · re-escolha a cada {PASSO_ESCOLHA} · minutos {KS['todos']} · "
+    log(f"VALIDAR FUNIL v4 · regime draft {REGIME_DRAFT} · C fixo {C_FIXO} · treino a cada {PASSO} · re-escolha a cada {PASSO_ESCOLHA} · minutos {KS['todos']} · "
         f"histórico desde {hist_ini} · opções com draft desde {ini_draft} · flags (início): {flag_ini} · {len(regras)} regras · lockbox {L0}+ NUNCA previsto · períodos {P}")
     for tag, (B, K) in M.items(): log(f"motor {tag}: famílias {B.CFG['FAMILIAS']} · CAL {[c for c in B.CFG['CAL_PARA'] if c.split('_')[0] in B.CFG['FAMILIAS']]} · ATOM {B.ORIGEM_ATOM}")
     brutos = carregar_brutos(BS, KS, conferir=True)
@@ -958,13 +959,13 @@ def main():
 def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info):
     f_ = lambda v, fmt="+.4f": "n/d" if v is None or (isinstance(v, float) and not np.isfinite(v)) else format(v, fmt)
     cad2 = f"a_cada_{PASSO_ESCOLHA}"
-    txt = [f"VALIDAÇÃO DO FUNIL v4.1 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
+    txt = [f"VALIDAÇÃO DO FUNIL v4 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
            f"{info['n_G']} jogos executáveis desde {info['hist_ini']} · opções com draft desde {info['ini_draft']}",
            f"Treino e re-escolha a cada {PASSO}/{PASSO_ESCOLHA} jogos, histórico ACUMULADO · PPG = lucro ÷ jogos executáveis · tudo nos MESMOS jogos dentro de cada (funil, janela) · "
            f"IC 95% bootstrap por cluster de 10 gameids",
            f"Colunas: PPG [IC] · Δ vs mesma regra por bloco · ROI · Sharpe/jogo · maxDD (u) · % blocos de {BLOCO_RISCO} jogos positivos · otimismo (PPG prometido − realizado) · "
            "percentil OOS (0,5 = acaso) · trocas · MCS (✓ = não se distingue da melhor) · Δ PPG contra cada benchmark (z por cluster) · Brier skill das previsões escolhidas · mais escolhidas",
-           f"Benchmarks [ref]: BASE_{BASELINE_MODELO} = esse modelo sem flag em todos os jogos · MODELOS FIXOS = cada modelo sozinho (MOM e INI) · acaso pct/p = posição da regra na DISTRIBUIÇÃO DO ACASO · FAVORITO / ZEBRA = 1 u no lado de menor / maior odd · VIG_MERCADO = dutching (lucro = −margem, igual para qualquer vencedor) "
+           f"Benchmarks [ref]: BASE_{BASELINE_MODELO} = esse modelo sem flag em todos os jogos · MODELOS FIXOS = cada modelo sozinho (MOM e INI) · acaso pct/p = posição da regra na DISTRIBUIÇÃO DO ACASO · FAVORITO / ZEBRA = 1 u no lado de menor / maior odd · VIG_MERCADO = dutching (perde sempre a margem) "
            "(custo da margem) · ACASO = média das opções elegíveis · FIXO_RETROSPECTO = melhor opção olhando o resultado (teto ENVIESADO). Mesma política, minutos e faixa de odd do funil.", ""]
     for (fu, jan, cj), r in R.groupby(["funil", "janela", "conjunto"], sort=False):
         f3 = lambda X: X[(X.funil == fu) & (X.janela == jan) & (X.conjunto == cj)]
