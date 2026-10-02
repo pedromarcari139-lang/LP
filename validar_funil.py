@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-validar_funil.py — v3 (02/10/2026) — VALIDAÇÃO DO FUNIL com re-treino E re-escolha a cada 2 jogos, opções (modelo × flag),
+validar_funil.py — v4 (02/10/2026) — VALIDAÇÃO DO FUNIL com re-treino E re-escolha a cada 2 jogos, opções (modelo × flag),
 MÉTRICAS do histórico de cada opção, REGRAS de escolha (simples ou compostas) e avaliação de cada regra por lucro, RISCO,
 VOLATILIDADE e OVERFIT; Brier / log loss olhados de várias formas.
 
@@ -32,12 +32,15 @@ CAMADAS
      escolha − PPG realizado, percentil da escolha entre as elegíveis no bloco seguinte, % de blocos acima da escolha ao acaso, trocas
      (OVERFIT/estabilidade). COMPARAÇÃO entre regras: Δ par a par (comparar_regras.csv), Model Confidence Set e Reality Check contra a
      escolha ao acaso (funções do motor).
+  5b) REFERÊNCIAS nos mesmos jogos: BASE (V6_MOM fixo), TODOS os modelos fixos sem flag (MOM e INI) e MOM − INI de cada um, favorito,
+     zebra, vig do mercado, acaso (média) e a DISTRIBUIÇÃO DO ACASO (N_ACASO sequências sorteando uma opção elegível a cada par: cada regra
+     ganha o seu percentil e p). Tudo também com as regras escolhendo só entre opções INI (CONJUNTOS["so_INI"]).
   6) BRIER / LOG LOSS (metricas_previsao_*.csv): modelo × mercado × skill por período e minuto, nos recortes todas | flag1 | flag0 |
      entrou / não entrou (FIRST e MULTI) | lado apostado.
 NÃO prevê, não lê resultado e não avalia jogo >= LOCKBOX_SERIO (8448). Não escolhe C, não grava DECISAO, não toca na etapa 1.
 USO: python validar_funil.py  (ou RODAR_FUNIL.bat, na pasta do RODAR.bat). Essencial em OUT_FUNIL\\RESUMO_FUNIL.txt.
 """
-import os, sys, re, json, time, pickle, hashlib, importlib.util, operator
+import os, sys, re, json, time, pickle, hashlib, importlib.util, operator, zlib
 import numpy as np
 import pandas as pd
 
@@ -80,6 +83,11 @@ REGRAS_EXTRAS = [                                                               
     # dict(nome="minha_regra", funcao=lambda M, El: ...),
 ]
 JANELAS = ["propria", "comum"]
+CONJUNTOS = {                       # conjuntos de opções em que as regras escolhem (cada um é avaliado separado, nos mesmos jogos)
+    "todas": lambda op: True,
+    "so_INI": lambda op: bool(re.search(r"_INI(_|$)", op["cand"])),     # só modelos SEM a odd do momento (variante INI: só abertura)
+}
+N_ACASO = 2000                      # sequências sorteadas da DISTRIBUIÇÃO DO ACASO (a cada par, uma opção elegível ao acaso)
 _T_TODOS = [5, 10, 15, 20, 25, 30, 35, 40, 45]
 _T_ANT = [10, 15, 20, 25, 30, 35]
 FUNIS = [   # nome, política, minutos em que pode apostar, minutos das métricas "todas"
@@ -586,12 +594,15 @@ def overfit_serie(lu, esc_g, seg_g, G, js, M_ppg, ii, D, El, pos, blocos):
 
 def benchmarks(info, G, fu, cfg, D, nomes):
     """BENCHMARKS (lucro e nº de apostas POR JOGO, posição em G), com a política e os minutos do funil e a faixa de odd do motor:
-    BASE_<modelo> = a opção BASELINE_MODELO (sem flag) em todos os jogos · FAVORITO / ZEBRA = 1 u no lado de menor / maior odd (FIRST: no
+    BASE_<modelo> = a opção BASELINE_MODELO (sem flag) em todos os jogos · FIXO_<modelo> = cada modelo (sem flag) fixo, inclusive os INI (sem a odd
+    do momento); um modelo que só existe na fase limpa tem lucro 0 antes de existir · FAVORITO / ZEBRA = 1 u no lado de menor / maior odd (FIRST: no
     1º minuto do funil em que essa odd está na faixa ODD_MIN–ODD_MAX; MULTI: em todo minuto em que está) · VIG_MERCADO = ½ u em CADA lado
     (perde exatamente a margem da casa: é o custo de apostar sem informação), nos mesmos minutos (FIRST: 1º minuto com os 2 lados válidos)."""
     nG = len(G); out = {}
     if BASELINE_MODELO in nomes:
         j = nomes.index(BASELINE_MODELO); out[f"BASE_{BASELINE_MODELO} (fixo, sem flag)"] = (D["Lg"][j].copy(), D["E"][j, :, 0].copy(), j)
+    for j, nm in enumerate(nomes):                                                 # TODOS os modelos fixos, sem flag (MOM e INI): quanto rende cada um sozinho
+        if "|" not in nm: out[f"FIXO_{nm} (sem flag)"] = (D["Lg"][j].copy(), D["E"][j, :, 0].copy(), j)
     x = info[info["t"].isin(list(fu["tempos"])) & info["gameid"].isin(set(G.tolist()))][["t", "gameid", "side", "y", "odd_t"]].copy()
     x["odd_t"] = pd.to_numeric(x["odd_t"], errors="coerce"); x = x[np.isfinite(x["odd_t"]) & (x["odd_t"] > 1)]
     x = x[x.groupby(["t", "gameid"])["side"].transform("nunique") == 2].sort_values(["gameid", "t", "odd_t", "side"], kind="mergesort")
@@ -662,7 +673,7 @@ def main():
         elif "funcao" not in r: assert r["ordenar"] in METRICAS, f"regra {r['nome']}: ordenar '{r['ordenar']}' não é métrica"
     P = [(n, a, b) for n, a, b in (("sujo", hist_ini, G_CLEAN), (f"limpo_{G_CLEAN}_{BS.CFG['INICIO_TESTE'] - 1}", G_CLEAN, int(BS.CFG["INICIO_TESTE"])),
                                    (f"limpo_{BS.CFG['INICIO_TESTE']}_{CORTE_TESTE - 1}", int(BS.CFG["INICIO_TESTE"]), CORTE_TESTE), (f"limpo_{CORTE_TESTE}_{L0 - 1}", CORTE_TESTE, L0)) if b > a]
-    log(f"VALIDAR FUNIL v3 · regime draft {REGIME_DRAFT} · C fixo {C_FIXO} · treino a cada {PASSO} · re-escolha a cada {PASSO_ESCOLHA} · minutos {KS['todos']} · "
+    log(f"VALIDAR FUNIL v4 · regime draft {REGIME_DRAFT} · C fixo {C_FIXO} · treino a cada {PASSO} · re-escolha a cada {PASSO_ESCOLHA} · minutos {KS['todos']} · "
         f"histórico desde {hist_ini} · opções com draft desde {ini_draft} · flags (início): {flag_ini} · {len(regras)} regras · lockbox {L0}+ NUNCA previsto · períodos {P}")
     for tag, (B, K) in M.items(): log(f"motor {tag}: famílias {B.CFG['FAMILIAS']} · CAL {[c for c in B.CFG['CAL_PARA'] if c.split('_')[0] in B.CFG['FAMILIAS']]} · ATOM {B.ORIGEM_ATOM}")
     brutos = carregar_brutos(BS, KS, conferir=True)
@@ -740,24 +751,27 @@ def main():
     SEG = {cad2: [(int(a), int(b)) for a, b in zip(cortes[:-1], cortes[1:])], "bloco_motor": [(int(g0), int(g1)) for (_, g0, g1) in BL["sujo"]]}
     a_all = np.array(sorted({a for s in SEG.values() for a, _ in s}), dtype=np.int64); pos = {int(a): i for i, a in enumerate(a_all)}
     El = elegiveis(G, opcoes, a_all, min_hist); rng = np.random.default_rng(int(BS.CFG["SEED"]))
-    linhas, pareados, trilhas, conf, comp, mcs_rows = [], [], [], [], [], []; jogos_comuns = []
+    linhas, pareados, trilhas, conf, comp, mcs_rows = [], [], [], [], [], []; jogos_comuns, dist_rows, momini = [], [], []
     for fu in FUNIS:
         log(f"funil {fu['nome']}: somas por jogo de {len(opcoes)} opções…"); D = dados_funil(G, GMf, apostas_de, opcoes, fu)
         BEN = benchmarks(info, G, fu, BS.CFG, D, nomes)
         for jan in JANELAS:
-            Wd = janela_dec(opcoes, El, jan); Mx = matriz_metricas(D, opcoes, a_all, Wd)
+          for conj, filtro_conj in CONJUNTOS.items():
+            mask_c = np.array([bool(filtro_conj(op)) for op in opcoes]); Elc = El & mask_c[None, :]; tag = f"{fu['nome']}/{jan}/{conj}"
+            if not Elc.any(): log(f"{tag}: nenhuma opção neste conjunto — pulado"); continue
+            Wd = janela_dec(opcoes, Elc, jan); Mx = matriz_metricas(D, opcoes, a_all, Wd)
             # -- conferência 1: conta rápida == conta direta (todas as métricas)
-            com_el = np.where(El.any(axis=1))[0]; amostra = rng.choice(com_el, size=min(CONFERENCIA_N, len(com_el)), replace=False); dif_max = 0.0
+            com_el = np.where(Elc.any(axis=1))[0]; amostra = rng.choice(com_el, size=min(CONFERENCIA_N, len(com_el)), replace=False); dif_max = 0.0
             for d in amostra:
-                for j in np.where(El[d])[0]:
+                for j in np.where(Elc[d])[0]:
                     vd = valores_direto(BS, D, j, a_all[d], Wd[d, j])
-                    for s in METRICAS:
-                        x, y_ = Mx[s][d, j], vd[s]
+                    for s_ in METRICAS:
+                        x, y_ = Mx[s_][d, j], vd[s_]
                         if np.isfinite(x) or np.isfinite(y_):
                             dif_max = max(dif_max, abs(x - y_) / max(1.0, abs(y_)) if (np.isfinite(x) and np.isfinite(y_)) else np.inf)
-            if dif_max > 1e-7: raise AssertionError(f"{fu['nome']}/{jan}: conta rápida ≠ conta direta (dif relativa {dif_max:.2e}) — nada foi gravado")
+            if dif_max > 1e-7: raise AssertionError(f"{tag}: conta rápida ≠ conta direta (dif relativa {dif_max:.2e}) — nada foi gravado")
             # -- conferência 2: o futuro trocado por ruído não muda a escolha de NENHUMA regra
-            esc_dif = 0; idx_base = {nome_regra(r): aplicar_regra(r, Mx, El) for r in regras}
+            esc_dif = 0; idx_base = {nome_regra(r): aplicar_regra(r, Mx, Elc) for r in regras}
             for d in amostra[:SABOTAGEM_N]:
                 a_s = a_all[d]; fut = G >= a_s; nf = int(fut.sum())
                 D2 = dict(D, T=D["T"].copy(), E=D["E"].copy(), Lg=D["Lg"].copy(), L2=D["L2"].copy(), N2=D["N2"].copy(), bets=[dict(b) for b in D["bets"]])
@@ -767,10 +781,10 @@ def main():
                     mf = b["g"] >= a_s; b["L"] = b["L"].copy(); b["L"][mf] = rng.normal(0, 5, size=int(mf.sum()))
                 M2 = matriz_metricas(D2, opcoes, a_all, Wd); ate = a_all <= a_s
                 for r in regras:
-                    if not np.array_equal(aplicar_regra(r, M2, El)[ate], idx_base[nome_regra(r)][ate]): esc_dif += 1
-            if esc_dif: raise AssertionError(f"{fu['nome']}/{jan}: escolha MUDOU com o futuro trocado por ruído ({esc_dif} casos) — VAZAMENTO; nada foi gravado")
-            conf.append(dict(funil=fu["nome"], janela=jan, decisoes_conferidas=len(amostra), dif_relativa_max=dif_max, sabotagens=min(SABOTAGEM_N, len(amostra)), escolhas_alteradas=esc_dif))
-            log(f"{fu['nome']}/{jan}: conta rápida × direta em {len(amostra)} decisões (dif máx {dif_max:.1e}) · sabotagem do futuro em {min(SABOTAGEM_N, len(amostra))}: 0 escolhas alteradas")
+                    if not np.array_equal(aplicar_regra(r, M2, Elc)[ate], idx_base[nome_regra(r)][ate]): esc_dif += 1
+            if esc_dif: raise AssertionError(f"{tag}: escolha MUDOU com o futuro trocado por ruído ({esc_dif} casos) — VAZAMENTO; nada foi gravado")
+            conf.append(dict(funil=fu["nome"], janela=jan, conjunto=conj, decisoes_conferidas=len(amostra), dif_relativa_max=dif_max, sabotagens=min(SABOTAGEM_N, len(amostra)), escolhas_alteradas=esc_dif))
+            log(f"{tag}: {int(mask_c.sum())} opções · conta rápida × direta em {len(amostra)} decisões (dif máx {dif_max:.1e}) · sabotagem do futuro em {min(SABOTAGEM_N, len(amostra))}: 0 escolhas alteradas")
             # -- procedimento de cada regra, nas 2 cadências
             series = {}
             for r in regras:
@@ -779,21 +793,40 @@ def main():
                     ii = np.array([pos[a] for a, _ in segs]); lu, nb, esc_g, seg_g = serie_procedimento(G, D, segs, idx_all[ii]); series[(nr_, cad)] = (lu, nb, esc_g, seg_g, ii)
                     for (a, b), d in zip(segs, ii):
                         k = idx_all[d]
-                        trilhas.append((fu["nome"], jan, nr_, cad, a, b, int(El[d].sum()), nomes[k] if k >= 0 else ("NAO_APOSTA" if k == -2 else None),
+                        trilhas.append((fu["nome"], jan, conj, nr_, cad, a, b, int(Elc[d].sum()), nomes[k] if k >= 0 else ("NAO_APOSTA" if k == -2 else None),
                                         float(Mx[ordem][d, k]) if (k >= 0 and ordem) else np.nan, float(Mx["ppg"][d, k]) if k >= 0 else np.nan))
             comuns = None
             for (lu, *_r) in series.values(): comuns = set(lu.index) if comuns is None else comuns & set(lu.index)
             js = np.array(sorted(comuns), dtype=np.int64); gi = np.searchsorted(G, js)
-            jogos_comuns.append(pd.DataFrame(dict(funil=fu["nome"], janela=jan, gameid=js)))
-            # referências: escolher ao acaso entre as elegíveis; melhor opção fixa em retrospecto
+            jogos_comuns.append(pd.DataFrame(dict(funil=fu["nome"], janela=jan, conjunto=conj, gameid=js)))
+            # referências: acaso (média), fixo em retrospecto, benchmarks e modelos fixos (sem flag)
             ii2 = np.array([pos[a] for a, _ in SEG[cad2]]); ini2 = np.array([a for a, _ in SEG[cad2]]); sgi = np.clip(np.searchsorted(ini2, js, side="right") - 1, 0, None)
-            Elg = El[ii2[sgi]]; ne = np.maximum(Elg.sum(1), 1)
+            Elg = Elc[ii2[sgi]]; ne = np.maximum(Elg.sum(1), 1)
             refs = {"ACASO (média das elegíveis)": (pd.Series(np.where(Elg, D["Lg"][:, gi].T, 0.0).sum(1) / ne, index=js), pd.Series(np.where(Elg, D["E"][:, gi, 0].T, 0.0).sum(1) / ne, index=js))}
+            ref_j = {}
             sempre = np.where(Elg.all(axis=0))[0]
             if len(sempre):
-                jb = sempre[np.argmax(D["Lg"][sempre][:, gi].sum(1))]
-                refs[f"FIXO_RETROSPECTO ({nomes[jb]}) — ENVIESADO"] = (pd.Series(D["Lg"][jb, gi], index=js), pd.Series(D["E"][jb, gi, 0], index=js))
-            for bn, (lg_, nb_, _j) in BEN.items(): refs[bn] = (pd.Series(lg_[gi], index=js), pd.Series(nb_[gi], index=js))
+                jb = sempre[np.argmax(D["Lg"][sempre][:, gi].sum(1))]; nm = f"FIXO_RETROSPECTO ({nomes[jb]}) — ENVIESADO"
+                refs[nm] = (pd.Series(D["Lg"][jb, gi], index=js), pd.Series(D["E"][jb, gi, 0], index=js)); ref_j[nm] = jb
+            for bn, (lg_, nb_, j_) in BEN.items():
+                if j_ is not None and not mask_c[j_] and not bn.startswith("BASE_"): continue          # modelo fixo fora do conjunto (ex.: MOM no "so_INI")
+                refs[bn] = (pd.Series(lg_[gi], index=js), pd.Series(nb_[gi], index=js))
+                if j_ is not None: ref_j[bn] = j_
+            # -- DISTRIBUIÇÃO DO ACASO: N_ACASO sequências que, a cada par, sorteiam UMA opção elegível (mesma cadência, mesmas opções)
+            rg_a = np.random.default_rng([int(BS.CFG["SEED"]), zlib.crc32(tag.encode())])
+            El2 = Elc[ii2]; n_el = El2.sum(1); ordem_el = np.argsort(~El2, axis=1, kind="stable")
+            sg_js = sgi; acaso_ppg = np.zeros(N_ACASO); acaso_dd = np.zeros(N_ACASO); acaso_sh = np.zeros(N_ACASO)
+            for b0 in range(0, N_ACASO, 250):
+                nb_ = min(250, N_ACASO - b0); r_ = np.floor(rg_a.random((nb_, len(ii2))) * np.maximum(n_el, 1)).astype(np.int64)
+                opt = ordem_el[np.arange(len(ii2))[None, :], r_]                                   # nb_ × pares
+                Lsim = D["Lg"][opt[:, sg_js], gi[None, :]]                                        # nb_ × jogos
+                acaso_ppg[b0:b0 + nb_] = Lsim.mean(1); c_ = np.cumsum(Lsim, axis=1)
+                acaso_dd[b0:b0 + nb_] = np.max(np.maximum.accumulate(np.concatenate([np.zeros((nb_, 1)), c_], axis=1), axis=1)[:, 1:] - c_, axis=1)
+                sd_ = Lsim.std(axis=1, ddof=1); acaso_sh[b0:b0 + nb_] = np.where(sd_ > 0, Lsim.mean(1) / np.where(sd_ > 0, sd_, 1), np.nan)
+            dist_rows.append(dict(funil=fu["nome"], janela=jan, conjunto=conj, n_sorteios=N_ACASO, n_jogos=len(js), ppg_media=acaso_ppg.mean(), ppg_dp=acaso_ppg.std(ddof=1),
+                                  ppg_p05=np.quantile(acaso_ppg, .05), ppg_p50=np.quantile(acaso_ppg, .5), ppg_p95=np.quantile(acaso_ppg, .95),
+                                  maxdd_p05=np.quantile(acaso_dd, .05), maxdd_p50=np.quantile(acaso_dd, .5), maxdd_p95=np.quantile(acaso_dd, .95),
+                                  sharpe_jogo_p50=np.nanquantile(acaso_sh, .5), sharpe_jogo_p95=np.nanquantile(acaso_sh, .95)))
             for key, val in list(series.items()) + [((rn, "-"), sv + (None, None, None)) for rn, sv in refs.items()]:
                 (rn, cad), (lu, nb, esc_g, seg_g, ii) = key, val
                 lc, nc = lu.reindex(js), nb.reindex(js); r_ = _bt(BS, lc)
@@ -802,48 +835,63 @@ def main():
                     m_, se_ = _media_se(lc[(js >= pa) & (js < pb)]); per[f"ppg_{pn}"] = m_; per[f"se_{pn}"] = se_
                 extra = dict(risco_serie(lc, nc))
                 if esc_g is not None: extra.update(_brier_proc(D, esc_g[gi], gi))
-                elif rn.startswith("BASE_") and BASELINE_MODELO in nomes: extra.update(_brier_proc(D, np.full(len(gi), nomes.index(BASELINE_MODELO)), gi))
+                elif rn in ref_j: extra.update(_brier_proc(D, np.full(len(gi), ref_j[rn]), gi))
+                pp = float(lc.mean())
+                extra.update(percentil_no_acaso=float(np.mean(acaso_ppg < pp) + 0.5 * np.mean(acaso_ppg == pp)), p_vs_acaso=float((np.sum(acaso_ppg >= pp) + 1) / (N_ACASO + 1)),
+                             percentil_maxdd_no_acaso=float(np.mean(acaso_dd > extra.get("maxdd", np.nan))) if "maxdd" in extra else np.nan)
                 if esc_g is not None:
                     ev = esc_g[gi]; evo = ev[ev >= 0]
-                    extra.update(overfit_serie(lu, esc_g, seg_g, G, js, Mx["ppg"], ii, D, El, pos, BL["sujo"]))
+                    extra.update(overfit_serie(lu, esc_g, seg_g, G, js, Mx["ppg"], ii, D, Elc, pos, BL["sujo"]))
                     extra.update(trocas=int((ev[1:] != ev[:-1]).sum()), opcoes_distintas=int(len(np.unique(evo))), pct_jogos_sem_aposta_por_regra=float(np.mean(ev == -2)),
                                  pct_jogos_com_flag=float(np.mean([opcoes[k]["flag"] is not None for k in evo])) if len(evo) else np.nan,
                                  mais_escolhidas=" · ".join(f"{nomes[k]} {v:.0%}" for k, v in pd.Series(evo).value_counts(normalize=True).head(3).items()))
                     tt = pd.Series(np.concatenate([D["bets"][k]["t"][np.isin(D["bets"][k]["g"], js[ev == k])] for k in np.unique(evo)]) if len(evo) else []).value_counts().sort_index()
                     extra["apostas_por_minuto"] = " · ".join(f"t{int(t)} {n}" for t, n in tt.items())
-                linhas.append(dict(funil=fu["nome"], politica=fu["politica"], janela=jan, regra=rn, cadencia=cad, n_jogos=r_["n"], ppg=r_["media"], ic_lo=r_["ic_lo"],
+                linhas.append(dict(funil=fu["nome"], politica=fu["politica"], janela=jan, conjunto=conj, regra=rn, cadencia=cad, n_jogos=r_["n"], ppg=r_["media"], ic_lo=r_["ic_lo"],
                                    ic_hi=r_["ic_hi"], p_unilateral=r_["p_valor"], **per, **extra))
-            # -- comparação entre regras (cadência a cada 2, mesmos jogos): par a par, MCS e Reality Check contra o acaso
+            # -- comparação entre regras (cadência a cada 2, mesmos jogos): par a par, contra cada referência, MCS e Reality Check contra o acaso
             Lr = pd.DataFrame({rn: series[(rn, cad2)][0].reindex(js).values for rn in nomes_r}, index=js); acaso = refs["ACASO (média das elegíveis)"][0].values
             for r1 in nomes_r:
                 for r2 in nomes_r:
                     if r1 >= r2: continue
-                    m_, se_ = _media_se(Lr[r1] - Lr[r2]); comp.append(dict(funil=fu["nome"], janela=jan, regra_1=r1, regra_2=r2, n_jogos=len(js), delta_ppg=m_, se=se_, z=m_ / se_ if se_ and se_ > 0 else np.nan))
+                    m_, se_ = _media_se(Lr[r1] - Lr[r2]); comp.append(dict(funil=fu["nome"], janela=jan, conjunto=conj, regra_1=r1, regra_2=r2, n_jogos=len(js), delta_ppg=m_, se=se_, z=m_ / se_ if se_ and se_ > 0 else np.nan))
                 for rn_, (sr_, _nb) in refs.items():
-                    m_, se_ = _media_se(Lr[r1] - sr_.reindex(js)); comp.append(dict(funil=fu["nome"], janela=jan, regra_1=r1, regra_2=rn_.split(" ")[0], n_jogos=len(js), delta_ppg=m_, se=se_, z=m_ / se_ if se_ and se_ > 0 else np.nan))
+                    m_, se_ = _media_se(Lr[r1] - sr_.reindex(js)); comp.append(dict(funil=fu["nome"], janela=jan, conjunto=conj, regra_1=r1, regra_2=rn_.split(" ")[0], n_jogos=len(js), delta_ppg=m_, se=se_, z=m_ / se_ if se_ and se_ > 0 else np.nan))
             cl = BS._clu(js)
             try:
                 vivos, _ = BS.mcs(-Lr, cl, alpha=ALPHA_MCS, B=B_MCS)
             except Exception as e_: vivos = []; log(f"MCS não calculado ({type(e_).__name__}: {e_})")
             try:
-                rc, _ = BS.nula_empirica_max(Lr.sub(acaso, axis=0), cl, B=B_RC, escopo=f"{fu['nome']}/{jan}: PPG de cada regra − escolha ao acaso")
+                rc, _ = BS.nula_empirica_max(Lr.sub(acaso, axis=0), cl, B=B_RC, escopo=f"{tag}: PPG de cada regra − escolha ao acaso")
             except Exception as e_: rc = {}; log(f"Reality Check não calculado ({type(e_).__name__}: {e_})")
-            mcs_rows.append(dict(funil=fu["nome"], janela=jan, n_jogos=len(js), n_regras=len(nomes_r), mcs_alpha=ALPHA_MCS, mcs_regras=" · ".join(vivos),
+            mcs_rows.append(dict(funil=fu["nome"], janela=jan, conjunto=conj, n_jogos=len(js), n_regras=len(nomes_r), mcs_alpha=ALPHA_MCS, mcs_regras=" · ".join(vivos),
                                  rc_melhor=rc.get("melhor"), rc_p_reality_check=rc.get("p_reality_check"), rc_p_spa=rc.get("p_SPA_c_aprox")))
-            for rn in nomes_r: linhas[[i for i, x in enumerate(linhas) if x["funil"] == fu["nome"] and x["janela"] == jan and x["regra"] == rn and x["cadencia"] == cad2][0]]["no_MCS"] = rn in vivos
+            for rn in nomes_r: linhas[[i for i, x in enumerate(linhas) if x["funil"] == fu["nome"] and x["janela"] == jan and x["conjunto"] == conj and x["regra"] == rn and x["cadencia"] == cad2][0]]["no_MCS"] = rn in vivos
             for rn in nomes_r:
                 rd = _bt(BS, series[(rn, cad2)][0].reindex(js) - series[(rn, "bloco_motor")][0].reindex(js))
-                pareados.append(dict(funil=fu["nome"], janela=jan, regra=rn, n_jogos=len(js), delta_ppg_2_menos_bloco=rd["media"], ic_lo=rd["ic_lo"], ic_hi=rd["ic_hi"], p_unilateral_2_melhor=rd["p_valor"]))
-            log(f"{fu['nome']}/{jan}: {len(js)} jogos comuns · MCS {vivos} · Reality Check (alguma regra > acaso) p={rc.get('p_reality_check')}")
+                pareados.append(dict(funil=fu["nome"], janela=jan, conjunto=conj, regra=rn, n_jogos=len(js), delta_ppg_2_menos_bloco=rd["media"], ic_lo=rd["ic_lo"], ic_hi=rd["ic_hi"], p_unilateral_2_melhor=rd["p_valor"]))
+            # -- MOM × INI: o mesmo modelo fixo com e sem a odd do momento (mesmos jogos)
+            for bn in refs:
+                if bn.startswith("FIXO_") and "_MOM" in bn and not bn.startswith("FIXO_RETRO"):
+                    bi = bn.replace("_MOM", "_INI")
+                    if bi in refs:
+                        m_, se_ = _media_se(refs[bn][0].reindex(js) - refs[bi][0].reindex(js))
+                        b1, b2 = _brier_proc(D, np.full(len(gi), ref_j[bn]), gi), _brier_proc(D, np.full(len(gi), ref_j[bi]), gi)
+                        momini.append(dict(funil=fu["nome"], janela=jan, conjunto=conj, modelo_MOM=bn.split(" ")[0], modelo_INI=bi.split(" ")[0], n_jogos=len(js),
+                                           ppg_MOM=float(refs[bn][0].reindex(js).mean()), ppg_INI=float(refs[bi][0].reindex(js).mean()), delta_ppg_MOM_menos_INI=m_, se=se_,
+                                           z=m_ / se_ if se_ and se_ > 0 else np.nan, bsskill_MOM=b1.get("bsskill_escolhida"), bsskill_INI=b2.get("bsskill_escolhida")))
+            log(f"{tag}: {len(js)} jogos comuns · acaso PPG {acaso_ppg.mean():+.4f} [{np.quantile(acaso_ppg, .05):+.4f}; {np.quantile(acaso_ppg, .95):+.4f}] · "
+                f"MCS {vivos} · Reality Check p={rc.get('p_reality_check')}")
         del D
     R = pd.DataFrame(linhas); PR = pd.DataFrame(pareados); MC = pd.DataFrame(mcs_rows)
     R.to_csv(os.path.join(OUT, "resumo_funil.csv"), index=False); PR.to_csv(os.path.join(OUT, "pareado_2_vs_bloco.csv"), index=False)
     CP = pd.DataFrame(comp); CP.to_csv(os.path.join(OUT, "comparar_regras.csv"), index=False); MC.to_csv(os.path.join(OUT, "mcs_reality_check.csv"), index=False)
     pd.DataFrame(conf).to_csv(os.path.join(OUT, "conferencia_regras.csv"), index=False)
-    pd.DataFrame(trilhas, columns=["funil", "janela", "regra", "cadencia", "a", "b", "opcoes_elegiveis", "escolhida", "valor_ordenacao", "ppg_historico_escolhida"]).to_csv(os.path.join(OUT, "trilhas.csv.gz"), index=False)
+    pd.DataFrame(dist_rows).to_csv(os.path.join(OUT, "distribuicao_acaso.csv"), index=False); pd.DataFrame(momini).to_csv(os.path.join(OUT, "mom_vs_ini.csv"), index=False)
+    pd.DataFrame(trilhas, columns=["funil", "janela", "conjunto", "regra", "cadencia", "a", "b", "opcoes_elegiveis", "escolhida", "valor_ordenacao", "ppg_historico_escolhida"]).to_csv(os.path.join(OUT, "trilhas.csv.gz"), index=False)
     pd.DataFrame(opcoes).to_csv(os.path.join(OUT, "opcoes.csv"), index=False)
     pd.concat(jogos_comuns, ignore_index=True).to_csv(os.path.join(OUT, "jogos_comuns.csv.gz"), index=False)
-    escrever_resumo(R, PR, MC, MT, P, CP, dict(regime=REGIME_DRAFT, C=C_FIXO, hist_ini=hist_ini, ini_draft=ini_draft, flag_ini=flag_ini, n_opcoes=len(opcoes), n_G=len(G), t0=t0, regras=nomes_r))
+    escrever_resumo(R, PR, MC, MT, P, CP, pd.DataFrame(dist_rows), pd.DataFrame(momini), dict(regime=REGIME_DRAFT, C=C_FIXO, hist_ini=hist_ini, ini_draft=ini_draft, flag_ini=flag_ini, n_opcoes=len(opcoes), n_G=len(G), t0=t0, regras=nomes_r))
     json.dump(dict(regime=REGIME_DRAFT, motores={tag: hashlib.sha256(open(os.path.join(AQUI, ARQ_SUJO if tag == "sujo" else ARQ_LIMPO), "rb").read()).hexdigest() for tag in M},
                    script_sha256=hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest(), C_FIXO=C_FIXO, PASSO=PASSO, PASSO_ESCOLHA=PASSO_ESCOLHA,
                    tempos=KS["todos"], min_treino=KS["min_nov"], lockbox_serio=L0, hist_inicio=hist_ini, inicio_opcoes_draft=ini_draft, flag_inicio=flag_ini, min_hist=min_hist,
@@ -852,31 +900,42 @@ def main():
               open(os.path.join(OUT, "config_funil.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=str)
 
 
-def escrever_resumo(R, PR, MC, MT, P, CP, info):
+def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info):
     f_ = lambda v, fmt="+.4f": "n/d" if v is None or (isinstance(v, float) and not np.isfinite(v)) else format(v, fmt)
     cad2 = f"a_cada_{PASSO_ESCOLHA}"
-    txt = [f"VALIDAÇÃO DO FUNIL v3 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
+    txt = [f"VALIDAÇÃO DO FUNIL v4 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
            f"{info['n_G']} jogos executáveis desde {info['hist_ini']} · opções com draft desde {info['ini_draft']}",
            f"Treino e re-escolha a cada {PASSO}/{PASSO_ESCOLHA} jogos, histórico ACUMULADO · PPG = lucro ÷ jogos executáveis · tudo nos MESMOS jogos dentro de cada (funil, janela) · "
            f"IC 95% bootstrap por cluster de 10 gameids",
            f"Colunas: PPG [IC] · Δ vs mesma regra por bloco · ROI · Sharpe/jogo · maxDD (u) · % blocos de {BLOCO_RISCO} jogos positivos · otimismo (PPG prometido − realizado) · "
            "percentil OOS (0,5 = acaso) · trocas · MCS (✓ = não se distingue da melhor) · Δ PPG contra cada benchmark (z por cluster) · Brier skill das previsões escolhidas · mais escolhidas",
-           f"Benchmarks [ref]: BASE_{BASELINE_MODELO} = esse modelo sem flag em todos os jogos · FAVORITO / ZEBRA = 1 u no lado de menor / maior odd · VIG_MERCADO = ½ u em cada lado "
+           f"Benchmarks [ref]: BASE_{BASELINE_MODELO} = esse modelo sem flag em todos os jogos · MODELOS FIXOS = cada modelo sozinho (MOM e INI) · acaso pct/p = posição da regra na DISTRIBUIÇÃO DO ACASO · FAVORITO / ZEBRA = 1 u no lado de menor / maior odd · VIG_MERCADO = ½ u em cada lado "
            "(custo da margem) · ACASO = média das opções elegíveis · FIXO_RETROSPECTO = melhor opção olhando o resultado (teto ENVIESADO). Mesma política, minutos e faixa de odd do funil.", ""]
-    for (fu, jan), r in R.groupby(["funil", "janela"], sort=False):
-        mc = MC[(MC.funil == fu) & (MC.janela == jan)].iloc[0]
-        txt.append(f"=== {fu} · janela {jan} · {int(mc.n_jogos)} jogos · Reality Check (alguma regra > acaso, corrigido pelas {int(mc.n_regras)} regras): p={f_(mc.rc_p_reality_check, '.4f')} "
+    for (fu, jan, cj), r in R.groupby(["funil", "janela", "conjunto"], sort=False):
+        f3 = lambda X: X[(X.funil == fu) & (X.janela == jan) & (X.conjunto == cj)]
+        mc = f3(MC).iloc[0]; da = f3(DA).iloc[0]
+        txt.append(f"=== {fu} · janela {jan} · opções: {cj} · {int(mc.n_jogos)} jogos · Reality Check (alguma regra > acaso, corrigido pelas {int(mc.n_regras)} regras): p={f_(mc.rc_p_reality_check, '.4f')} "
                    f"(SPA {f_(mc.rc_p_spa, '.4f')}) · MCS {mc.mcs_alpha:.0%}: {mc.mcs_regras or 'n/d'}")
+        txt.append(f"    DISTRIBUIÇÃO DO ACASO ({int(da.n_sorteios)} sequências, uma opção elegível sorteada a cada par): PPG mediana {f_(da.ppg_p50)} [p5 {f_(da.ppg_p05)}; p95 {f_(da.ppg_p95)}] · "
+                   f"maxDD mediana {f_(da.maxdd_p50, '.1f')} [p5 {f_(da.maxdd_p05, '.1f')}; p95 {f_(da.maxdd_p95, '.1f')}]")
         a2 = r[r.cadencia == cad2].sort_values("ppg", ascending=False)
         for _, a in a2.iterrows():
-            pr = PR[(PR.funil == fu) & (PR.janela == jan) & (PR.regra == a.regra)].iloc[0]
+            pr = f3(PR)[f3(PR).regra == a.regra].iloc[0]
             txt.append(f"   {a.regra:<28} {f_(a.ppg)} [{f_(a.ic_lo)}; {f_(a.ic_hi)}] · Δbloco {f_(pr.delta_ppg_2_menos_bloco, '+.3f')} · ROI {f_(a.get('roi'), '+.3f')} · "
                        f"Sh {f_(a.get('sharpe_jogo'), '+.3f')} · DD {f_(a.get('maxdd'), '.1f')} · blocos+ {f_(a.get('pct_blocos_positivos'), '.0%')} · otim {f_(a.get('otimismo'), '+.3f')} · "
-                       f"pctOOS {f_(a.get('percentil_oos_medio'), '.2f')} · trocas {int(a.trocas)} · {'✓' if a.get('no_MCS') else ' '} · "
+                       f"pctOOS {f_(a.get('percentil_oos_medio'), '.2f')} · acaso pct {f_(a.get('percentil_no_acaso'), '.2f')} p={f_(a.get('p_vs_acaso'), '.3f')} · trocas {int(a.trocas)} · {'✓' if a.get('no_MCS') else ' '} · "
                        + " · ".join(f"Δ{b_} {f_(c_.delta_ppg, '+.3f')} (z {f_(c_.z, '+.1f')})" for b_ in (f"BASE_{BASELINE_MODELO}", "FAVORITO", "ZEBRA", "VIG_MERCADO", "ACASO")
-                                    for _, c_ in CP[(CP.funil == fu) & (CP.janela == jan) & (CP.regra_1 == a.regra) & (CP.regra_2 == b_)].iterrows())
+                                    for _, c_ in f3(CP)[(f3(CP).regra_1 == a.regra) & (f3(CP).regra_2 == b_)].iterrows())
                        + f" · Brier skill das escolhidas {f_(a.get('bsskill_escolhida'), '+.5f')} · {a.mais_escolhidas}")
-        for _, x in r[r.cadencia == "-"].iterrows():
+        fixos = r[(r.cadencia == "-") & r.regra.str.startswith("FIXO_") & ~r.regra.str.startswith("FIXO_RETRO")].sort_values("ppg", ascending=False)
+        if len(fixos):
+            txt.append(f"   [ref] MODELOS FIXOS sem flag ({len(fixos)}; PPG · Brier skill · percentil no acaso): "
+                       + " | ".join(f"{x.regra.split(' ')[0][5:]} {f_(x.ppg, '+.3f')} {f_(x.get('bsskill_escolhida'), '+.4f')} {f_(x.get('percentil_no_acaso'), '.2f')}" for _, x in fixos.iterrows()))
+        mi = f3(MI) if len(MI) else MI
+        if len(mi):
+            txt.append("   MOM − INI (mesmo modelo fixo com × sem a odd do momento; ΔPPG (z) · Brier skill MOM/INI): "
+                       + " | ".join(f"{x.modelo_MOM[5:].replace('_MOM', '')} {f_(x.delta_ppg_MOM_menos_INI, '+.3f')} ({f_(x.z, '+.1f')}) {f_(x.bsskill_MOM, '+.4f')}/{f_(x.bsskill_INI, '+.4f')}" for _, x in mi.iterrows()))
+        for _, x in r[(r.cadencia == "-") & ~(r.regra.str.startswith("FIXO_") & ~r.regra.str.startswith("FIXO_RETRO"))].iterrows():
             txt.append(f"   [ref] {x.regra:<40} {f_(x.ppg)} [{f_(x.ic_lo)}; {f_(x.ic_hi)}] · ROI {f_(x.get('roi'), '+.3f')} · Sh {f_(x.get('sharpe_jogo'), '+.3f')} · DD {f_(x.get('maxdd'), '.1f')}"
                        + (f" · Brier skill {f_(x.get('bsskill_escolhida'), '+.5f')}" if pd.notna(x.get("bsskill_escolhida", np.nan)) else ""))
         txt.append("   PPG por período (" + ", ".join(pn for pn, _, _ in P) + "): " + " | ".join(f"{a.regra} " + "/".join(f_(a[f'ppg_{pn}'], '+.3f') for pn, _, _ in P) for _, a in a2.head(5).iterrows()))

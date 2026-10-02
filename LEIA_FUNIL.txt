@@ -1,4 +1,4 @@
-VALIDAR FUNIL (v3) — como rodar no PC da Amanda
+VALIDAR FUNIL (v4) — como rodar no PC da Amanda
 ================================================
 
 O QUE É
@@ -24,6 +24,8 @@ O QUE TRAZER DE VOLTA
     RESUMO_FUNIL.txt ................ o essencial (regras × benchmarks, risco, overfit, MCS, Reality Check, Brier/log loss)
     resumo_funil.csv ................ todas as colunas de todas as regras e benchmarks
     comparar_regras.csv ............. Δ PPG de cada regra contra cada outra regra e contra cada benchmark
+    distribuicao_acaso.csv ......... distribuição do PPG/maxDD escolhendo ao acaso entre as opções elegíveis (cada regra mostra o seu percentil)
+    mom_vs_ini.csv .................. cada modelo fixo com × sem a odd do momento (MOM − INI), mesmos jogos
     mcs_reality_check.csv, pareado_2_vs_bloco.csv, conferencia_regras.csv, opcoes.csv, config_funil.json
     metricas_previsao_resumo.csv .... Brier / log loss: todas, flag=1, flag=0, entrou/não entrou, lado apostado
     trilhas.csv.gz, jogos_comuns.csv.gz, previsoes_funil.csv.gz, ajustes_funil.csv.gz (maiores; tragam se couber)
@@ -31,4 +33,4 @@ O QUE TRAZER DE VOLTA
 
 ONDE MUDAR AS COISAS (topo do validar_funil.py, bloco CONFIG)
   C_FIXO, REGIME_DRAFT ("sujo" = DataFrame inteiro, padrão), FUNIS, BASELINE_MODELO, flags e seus inícios,
-  REGRAS (as 16 simples) e REGRAS_EXTRAS (regras compostas: ordenar + filtros + o que fazer se ninguém passar).
+  CONJUNTOS (todas as opções / só INI), N_ACASO, REGRAS (as 16 simples) e REGRAS_EXTRAS (regras compostas: ordenar + filtros + o que fazer se ninguém passar).
