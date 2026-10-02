@@ -1,0 +1,2 @@
+SystemExit: motor backtest_sujo.py: esta versão não tem o que o validar_funil precisa — faltam ['walk_forward_dev', 'CFG[EPV_ALERTA]']. Nada foi treinado.
+exit=3

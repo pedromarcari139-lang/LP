@@ -1,0 +1,35 @@
+23:23:42 VALIDAR FUNIL v4.5 · regime draft sujo · C fixo 1.0 · treino a cada 2 · re-escolha a cada 2 · minutos [10, 15, 20, 25, 30, 35] · histórico desde 200 · opções com draft desde 420 · flags (início): {'cWRgrande': 200, 'cPROBSgrande': 200, 'bisolo': 400, 'bipro': 420, 'bisolo30': 400, 'bipro30': 420, 'bisolo35mais': 400, 'bipro35mais': 420} · 20 regras · lockbox 700+ NUNCA previsto · períodos [('sujo', 200, 400), ('limpo_400_499', 400, 500), ('limpo_500_599', 500, 600), ('limpo_600_699', 600, 700)]
+23:23:42 motor sujo: famílias ['V6', 'TUDO', 'V6E', 'V6WR'] · CAL ['TUDO_INI'] · ATOM reconstrução VERIFICADA == app (Claude Code 22/09/2026: mesmos termos do certax V6 nos 6 minutos; 3.045.284 células com diferença 0,0; atomg.py SHA-256 1c6882fd…)
+23:23:43 t10: xlsx zz10.xlsx · 1398 linhas de desenvolvimento (gid < 700); 122 linhas do lockbox (ou sem gameid) descartadas na leitura
+23:23:44 t15: xlsx zz15.xlsx · 1398 linhas de desenvolvimento (gid < 700); 122 linhas do lockbox (ou sem gameid) descartadas na leitura
+23:23:45 t20: xlsx zz20.xlsx · 1398 linhas de desenvolvimento (gid < 700); 122 linhas do lockbox (ou sem gameid) descartadas na leitura
+23:23:46 t25: xlsx zz25.xlsx · 1398 linhas de desenvolvimento (gid < 700); 122 linhas do lockbox (ou sem gameid) descartadas na leitura
+23:23:47 t30: xlsx zz30.xlsx · 1174 linhas de desenvolvimento (gid < 700); 98 linhas do lockbox (ou sem gameid) descartadas na leitura
+23:23:48 t35: xlsx zz35.xlsx · 932 linhas de desenvolvimento (gid < 700); 78 linhas do lockbox (ou sem gameid) descartadas na leitura
+23:23:48 colunas dos zz: OK (features dos candidatos, preparar e flags, em todos os minutos)
+23:23:48 conferência entre minutos OK:
+    t10: 1398 linhas em comum com o zz10 (19 colunas iguais)
+    t15: 1398 linhas em comum com o zz10 (19 colunas iguais) · só no zz15: 0 · só no zz10: 0
+    t20: 1398 linhas em comum com o zz10 (19 colunas iguais) · só no zz20: 0 · só no zz10: 0
+    t25: 1398 linhas em comum com o zz10 (19 colunas iguais) · só no zz25: 0 · só no zz10: 0
+    t30: 1174 linhas em comum com o zz10 (19 colunas iguais) · só no zz30: 0 · só no zz10: 224
+    t35: 932 linhas em comum com o zz10 (19 colunas iguais) · só no zz35: 0 · só no zz10: 466
+23:23:48 colunas dos zz: OK (features dos candidatos, preparar e flags, em todos os minutos)
+23:23:49 features V6_MOM t10 (9): side M_open g5 D_k5 M5 g10 D_k10 M10 D_drake10
+23:23:49 features V6_MOM t15 (14): side M_open g5 D_k5 M5 g10 D_k10 M10 D_drake10 g15 D_k15 M15 D_drake15 D_tt15
+23:23:49 features V6_MOM t20 (19): side M_open g5 D_k5 M5 g10 D_k10 M10 D_drake10 g15 D_k15 M15 D_drake15 D_tt15 g20 D_k20 M20 D_drake20 D_tt20
+23:23:49 features V6_MOM t25 (24): side M_open g5 D_k5 M5 g10 D_k10 M10 D_drake10 g15 D_k15 M15 D_drake15 D_tt15 g20 D_k20 M20 D_drake20 D_tt20 g25 D_k25 M25 D_drake25 D_tt25
+23:23:49 features V6_MOM t30 (29): side M_open g5 D_k5 M5 g10 D_k10 M10 D_drake10 g15 D_k15 M15 D_drake15 D_tt15 g20 D_k20 M20 D_drake20 D_tt20 g25 D_k25 M25 D_drake25 D_tt25 g30 D_k30 M30 D_drake30 D_tt30
+23:23:49 features V6_MOM t35 (34): side M_open g5 D_k5 M5 g10 D_k10 M10 D_drake10 g15 D_k15 M15 D_drake15 D_tt15 g20 D_k20 M20 D_drake20 D_tt20 g25 D_k25 M25 D_drake25 D_tt25 g30 D_k30 M30 D_drake30 D_tt30 g35 D_k35 M35 D_drake35 D_tt35
+23:23:49 motor sujo: 7 blocos de avaliação (200–699) → 250 pares de treino
+23:23:49 treino: 2 processo(s) ao mesmo tempo (N_PROCESSOS = 2 fixo · 8 candidatos)
+23:23:49 2 processos iniciados (logs em /tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/v46/T1_v90_v45/OUT_FUNIL/funil_parte*.log)
+23:25:34 processos terminados em 1.8 min
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/v46/T1_v90_v45/validar_funil.py", line 1093, in <module>
+    else: main()
+          ^^^^^^
+  File "/tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/v46/T1_v90_v45/validar_funil.py", line 815, in main
+    fits = BS._alerta_epv_atual(fits)
+           ^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'bt_funil_sujo' has no attribute '_alerta_epv_atual'

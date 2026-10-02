@@ -1,0 +1,9 @@
+[OK ] previsões com gameid < 700 idênticas (chaves e p) — 49428 linhas · max|Δp| = 0.00e+00
+      (controle) previsões com gameid >= 700: 0 × 0 linhas
+[OK ] decisões com a <= 700: escolha, nº de elegíveis e valores idênticos (todas as regras, funis, janelas, conjuntos, cadências) — 41120 decisões · 0 diferentes
+      (controle) decisões com a > 700 cujo valor mudou: 0 de 0
+[OK ] resumo_funil.csv idêntico — (424, 55) · max|Δ| numérico 0.00e+00
+[OK ] metricas_previsao_resumo.csv idêntico — (2694, 17) · max|Δ| numérico 0.00e+00
+[OK ] comparar_regras.csv idêntico — (3600, 9) · max|Δ| numérico 0.00e+00
+[OK ] distribuicao_acaso.csv idêntico — (8, 15) · max|Δ| numérico 0.00e+00
+RESULTADO: TUDO OK

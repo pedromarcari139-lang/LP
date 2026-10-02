@@ -45,14 +45,14 @@ import numpy as np
 import pandas as pd
 
 # ================================ CONFIG ================================
-REGIME_DRAFT = "sujo"               # "sujo" (padrão: DataFrame inteiro no treino, draft vira opção na fase limpa) | "limpo" (ver acima)
+REGIME_DRAFT = "limpo"               # "sujo" (padrão: DataFrame inteiro no treino, draft vira opção na fase limpa) | "limpo" (ver acima)
 ARQ_SUJO, ARQ_LIMPO = "backtest_sujo.py", "backtest_limpo.py"
 C_FIXO = 1.0                        # C ÚNICO. 1.0 = valor a priori (padrão do sklearn; está na grade → banco). O C da etapa 1 foi escolhido com estes jogos (otimista)
-LOCKBOX_SERIO = 8448                # nada >= este gid é previsto
+LOCKBOX_SERIO = 700                # nada >= este gid é previsto
 PASSO = 2                           # re-treino a cada PASSO gameids
 PASSO_ESCOLHA = 2                   # re-escolha a cada PASSO_ESCOLHA gameids (múltiplo de PASSO)
 TEMPOS_NOVOS = []                   # v4.5 (Pedro): só os minutos do motor (10–35). Para acrescentar minutos: ex. [5, 40] (precisa de zz5/zz40)
-MIN_TREINO_NOVOS = {5: 150, 40: 120, 45: 120}
+MIN_TREINO_NOVOS = {5: 60, 40: 60, 45: 40}
 INICIO_PREVISOES = None             # 1º jogo PREVISTO (motor sujo). None = INICIO_TESTE_SUJO do motor (700, o da etapa 1: o banco é reaproveitado).
                                     # Menor (par, ex. 300) = o funil começa antes, com os 1ºs modelos treinados em menos jogos (MIN_TREINO_JOGOS ainda vale);
                                     # os treinos a partir do 700 continuam vindo do banco (os pares são os mesmos)
@@ -62,7 +62,7 @@ INICIO_OPCOES_DRAFT = None          # None = max(G_CLEAN, PRO_LIVE_FROM) = 6115 
                                     #        INICIO_TESTE (6628) no regime limpo
 EMBARGO_ESCOLHA = 0                 # a escolha antes do par [a, a+2) usa só jogos < a − EMBARGO_ESCOLHA (0 = supõe que o par anterior já terminou;
                                     # use 2 ou mais se houver mais de 2 jogos ao mesmo tempo). O TREINO dos modelos tem o seu próprio (EMBARGO_JOGOS do motor)
-MIN_HIST = None                     # None = SELECAO_MIN_HIST_JOGOS (300): opção só é elegível com >= isto de jogos executáveis na própria janela
+MIN_HIST = 50                     # None = SELECAO_MIN_HIST_JOGOS (300): opção só é elegível com >= isto de jogos executáveis na própria janela
 MIN_LINHAS = 30                     # métricas de linhas/apostas (todas*, entradas*, roi, sharpe, sortino, maxdd, seq_ruim, calmar, t_*) exigem >= isto
 JANELA_RECENTE = 300                # métricas "_recente": só os últimos N jogos executáveis da janela
 FLAGS_SUJO = ["cWRgrande", "cPROBSgrande"]
@@ -84,7 +84,11 @@ METRICAS = {
 SENTIDO = dict(METRICAS)
 REGRAS = ["bsskill_todas", "llskill_todas", "brier_todas", "ll_todas", "bsskill_entradas", "llskill_entradas", "brier_entradas", "ll_entradas",
           "ppg", "lucro", "roi", "sharpe", "sortino", "calmar", "maxdd", "seq_ruim"]            # as 16 regras simples de hoje (uma por métrica)
-REGRAS_EXTRAS = [                                                                              # regras COMPOSTAS (vazio = só as simples). Exemplos:
+REGRAS_EXTRAS = [
+    dict(nome="brier_com_roi>=0", ordenar="brier_todas", filtros=[("roi", ">=", 0.0)], sem_candidato="melhor_sem_filtro"),
+    dict(nome="bsskill_t_ppg>=1_relaxar", ordenar="bsskill_todas", filtros=[("t_ppg", ">=", 1.0), ("n_apostas", ">=", 40)], sem_candidato="relaxar"),
+    dict(nome="ppg_nao_piorando_ou_nada", ordenar="ppg", filtros=[("queda_ppg", ">=", 0.0)], sem_candidato="nao_apostar"),
+    dict(nome="funcao_menor_vol", funcao=lambda M, El: __import__("numpy").where(El.any(1), __import__("numpy").argmax(__import__("numpy").where(El & __import__("numpy").isfinite(M["vol_ppg"]), -M["vol_ppg"], -__import__("numpy").inf), 1), -1)),                                                                              # regras COMPOSTAS (vazio = só as simples). Exemplos:
     # dict(nome="brier_com_roi>=2%", ordenar="brier_todas", filtros=[("roi", ">=", 0.02)], sem_candidato="melhor_sem_filtro"),
     # dict(nome="bsskill_com_t_ppg>=1_e_100apostas", ordenar="bsskill_todas", filtros=[("t_ppg", ">=", 1.0), ("n_apostas", ">=", 100)], sem_candidato="relaxar"),
     # dict(nome="ppg_se_nao_esta_piorando", ordenar="ppg", filtros=[("queda_ppg", ">=", 0.0)], sem_candidato="nao_apostar"),
@@ -105,21 +109,21 @@ FUNIS = [   # nome, política, minutos em que pode apostar, minutos das métrica
     dict(nome="MULTI_10a35", politica="MULTI", tempos=_T_ANT,   minutos_criterio=_T_ANT),
 ]
 METRICAS_TEMPOS = _T_ANT            # minutos das políticas no recorte entrou/não entrou das métricas de Brier/log loss
-CORTE_TESTE = 7729                  # só descritivo: períodos separados neste jogo
+CORTE_TESTE = 600                  # só descritivo: períodos separados neste jogo
 BASELINE_MODELO = "V6_MOM"          # benchmark "modelo fixo": esta opção (sem flag) em TODOS os jogos, com a política do funil
 BLOCO_RISCO = 150                   # tamanho do bloco (jogos avaliados consecutivos) para % de blocos positivos e pior bloco
 USAR_BANCO = True
-N_PROCESSOS = 0                     # 0 = automático; 1 = em série. Não muda resultado
+N_PROCESSOS = int(__import__('os').environ.get('NPR', '1'))                     # 0 = automático; 1 = em série. Não muda resultado
 GB_POR_PROCESSO = 2.5
-VERIFICAR_LIMPO = True
-B_BOOT = 5000                       # bootstrap por cluster de 10 gameids dos IC de PPG
+VERIFICAR_LIMPO = False
+B_BOOT = 300                       # bootstrap por cluster de 10 gameids dos IC de PPG
 B_MCS = 2000                        # réplicas do Model Confidence Set entre as regras
 B_RC = 5000                         # réplicas do Reality Check (alguma regra bate a escolha ao acaso?)
 ALPHA_MCS = 0.10
 CONFERENCIA_N = 12                  # decisões sorteadas por (funil, janela) para conferir a conta rápida contra a conta direta
 SABOTAGEM_N = 3                     # decisões sorteadas por (funil, janela) em que o futuro é trocado por ruído (nenhuma regra pode mudar a escolha)
 PASTA_SAIDA = "OUT_FUNIL"
-CFG_EXTRA = {}                      # vazio no uso normal (só para testes)
+CFG_EXTRA = dict(G_CLEAN=400, INICIO_TESTE=500, INICIO_TESTE_SUJO=200, BLOCO_JOGOS=50, BLOCO_JOGOS_SUJO=100, MIN_TREINO_JOGOS={10:60,15:60,20:60,25:60,30:60,35:50}, FAMILIAS=['V6','TUDO','V6E','V6WR'], CAL_PARA=['TUDO_INI'], SELECAO_INICIO_AVALIACAO=500, SELECAO_MIN_HIST_JOGOS=50, PRO_LIVE_FROM=420)                      # vazio no uso normal (só para testes)
 # ========================================================================
 
 AQUI = os.path.dirname(os.path.abspath(__file__))

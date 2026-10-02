@@ -1,9 +1,18 @@
-VALIDAR FUNIL (v4.5 — só os minutos 10 a 35) — como rodar no PC da Amanda
+VALIDAR FUNIL (v4.6 — corrige o erro "_alerta_epv_atual"; só os minutos 10 a 35) — como rodar no PC da Amanda
 ================================================
 
 O QUE É
   Um script NOVO, separado da rodada oficial. Não mexe em nada da etapa 1, não grava DECISAO e não prevê nenhum jogo >= 8448.
   Ele usa o motor (backtest_sujo.py / backtest_limpo.py), o .venv e a BANCO_PREVISOES que JÁ estão na pasta do RODAR.bat.
+
+v4.6 (02/10): o motor desta pasta é anterior à v9.0.1 (provavelmente a v9.0: não tem a seção 10) e a v4.5 chamava uma função que só existe na v9.0.1
+  (AttributeError: module 'bt_funil_sujo' has no attribute '_alerta_epv_atual'). Agora as funções de AVALIAÇÃO (apostas, linhas por jogo,
+  universo executável, bootstrap, MCS, Reality Check, alerta de EPV) estão copiadas da v9.0.1 dentro do validar_funil.py; a PREVISÃO continua
+  sendo a do motor da pasta (e o banco dela). Logo no início o log mostra uma linha por motor:
+     "motor sujo (backtest_sujo.py): versão SEM a seção 10 da v9.0.1 (v9.0 ou anterior) · trecho de PREVISÃO SHA-256 3693c7c9…8ed5 = o da v9.0/v9.0.1 ..."
+  Se em vez de "=" aparecer "≠ ... ATENÇÃO", anote (o motor da pasta é outro; roda igual, mas avise). Se faltar algo no motor, ele PARA ali,
+  antes de treinar, e diz o que falta. Depois dos processos, o log mostra quantos treinos vieram da BANCO_PREVISOES ("treinos reaproveitados").
+  NÃO precisa trocar o motor nem nenhum outro arquivo da pasta.
 
 O QUE COPIAR (4 arquivos deste zip)
   1. Abra a pasta onde está o RODAR.bat (no PC da Amanda: C:\bt89c\bt89c — a mesma do .venv e da BANCO_PREVISOES).

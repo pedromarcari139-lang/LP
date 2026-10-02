@@ -1,0 +1,16 @@
+OK  simples brier (menor), empate C/B → B (alfabética), D fora na dec 1: [np.int64(3), np.int64(1), np.int64(-1)]
+OK  simples ppg (maior), empate B/C → B; D com NaN não conta: [np.int64(1), np.int64(0), np.int64(-1)]
+OK  filtro roi>=0 → melhor brier entre A e C; dec 1 ninguém passa → melhor_sem_filtro (B): [np.int64(2), np.int64(1), np.int64(-1)]
+OK  mesmo filtro, ninguém passa → nao_apostar (−2): [np.int64(2), np.int64(-2), np.int64(-1)]
+OK  relaxar: dec 0 passa nos 2 (A, C → C); dec 1 tira o roi e fica n>=100 (A, C → A): [np.int64(2), np.int64(0), np.int64(-1)]
+OK  função: sempre a última elegível: [np.int64(3), np.int64(2), np.int64(-1)]
+OK  função que escolhe opção NÃO elegível é recusada: regra ruim: escolheu opção NÃO elegível
+OK  filtro com métrica inexistente é recusado: regra ruim2: filtro inválido (nao_existe >=)
+OK  serie_procedimento: jogos avaliados: [10, 11, 12, 13]
+OK  serie_procedimento: lucro: [np.float64(-1.0), np.float64(-1.0), np.float64(0.0), np.float64(0.0)]
+OK  DD por aposta (−1,+1 no jogo 10): [1.0, 1]
+OK  DD por jogo do mesmo caso (esconde a perda): [0.0]
+OK  VIG dutching jogo 10, 11 = 1/S − 1; jogo 12 (8 e 9 fora da faixa) = 0: [np.float64(-0.030769230769), np.float64(-0.022895840052), np.float64(0.0)]
+OK  FAVORITO: 10 ganha 0,8; 11 perde 1 (odd 1,01 na faixa); 12 fora: [np.float64(0.8), np.float64(-1.0), np.float64(0.0)]
+OK  ZEBRA: 10 perde; 11 odd 30 FORA da faixa (sem aposta); 12 fora: [np.float64(-1.0), np.float64(0.0), np.float64(0.0)]
+15 verificações OK

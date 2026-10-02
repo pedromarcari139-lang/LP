@@ -1,0 +1,21 @@
+[FALHOU] ajustes_funil.csv.gz: forma (13149, 27) × (13149, 27)
+[FALHOU] apostas_procedimento.csv.gz: (39249, 16) · texto igual · vazios iguais · max|Δ| numérico 1.20e-13
+[OK ] auditoria_indices.csv: (15, 9) · texto igual · vazios iguais · max|Δ| numérico 0.00e+00
+[OK ] comparar_regras.csv: (3600, 9) · texto igual · vazios iguais · max|Δ| numérico 0.00e+00
+[OK ] conferencia_regras.csv: (8, 7) · texto igual · vazios iguais · max|Δ| numérico 0.00e+00
+[OK ] distribuicao_acaso.csv: (8, 15) · texto igual · vazios iguais · max|Δ| numérico 0.00e+00
+[OK ] features_por_minuto.csv: (48, 7) · texto igual · vazios iguais · max|Δ| numérico 0.00e+00
+[OK ] jogos_comuns.csv.gz: (3584, 4) · texto igual · vazios iguais · max|Δ| numérico 0.00e+00
+[OK ] lucro_por_jogo.csv.gz: (27556, 5) · texto igual · vazios iguais · max|Δ| numérico 0.00e+00
+[OK ] mcs_reality_check.csv: (8, 10) · texto igual · vazios iguais · max|Δ| numérico 0.00e+00
+[FALHOU] metricas_previsao_por_minuto.csv.gz: (17217, 17) · texto igual · vazios iguais · max|Δ| numérico 2.26e-10
+[FALHOU] metricas_previsao_resumo.csv: (2694, 17) · texto igual · vazios iguais · max|Δ| numérico 1.49e-13
+[OK ] mom_vs_ini.csv: (16, 13) · texto igual · vazios iguais · max|Δ| numérico 0.00e+00
+[OK ] opcoes.csv: (81, 4) · texto igual · vazios iguais · max|Δ| numérico 0.00e+00
+[OK ] pareado_2_vs_bloco.csv: (160, 9) · texto igual · vazios iguais · max|Δ| numérico 0.00e+00
+[FALHOU] previsoes_funil.csv.gz: (49428, 7) · texto DIFERENTE · vazios DIFERENTES · max|Δ| numérico 4.98e+02
+[FALHOU] resumo_funil.csv: (424, 55) · texto igual · vazios iguais · max|Δ| numérico 5.55e-16
+[FALHOU] trilhas.csv.gz: (41120, 14) · texto igual · vazios iguais · max|Δ| numérico 1.55e-15
+[OK ] universo.csv.gz: (498, 1) · texto igual · vazios iguais · max|Δ| numérico 0.00e+00
+19 arquivos comparados · tolerância 0 · maior |Δ| 4.98e+02
+RESULTADO: FALHAS: ajustes_funil.csv.gz, apostas_procedimento.csv.gz, metricas_previsao_por_minuto.csv.gz, metricas_previsao_resumo.csv, previsoes_funil.csv.gz, resumo_funil.csv, trilhas.csv.gz

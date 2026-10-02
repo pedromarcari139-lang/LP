@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-validar_funil.py — v4.6 (02/10/2026: avaliação sem depender da versão do motor — roda com o motor v9.0; minutos 10–35; auditoria de vazamento, livro de apostas, INICIO_PREVISOES, paralelismo próprio) — VALIDAÇÃO DO FUNIL com re-treino E re-escolha a cada 2 jogos, opções (modelo × flag),
+validar_funil.py — v4.5 (02/10/2026: minutos 10–35; auditoria de vazamento, livro de apostas, INICIO_PREVISOES, paralelismo próprio) — VALIDAÇÃO DO FUNIL com re-treino E re-escolha a cada 2 jogos, opções (modelo × flag),
 MÉTRICAS do histórico de cada opção, REGRAS de escolha (simples ou compostas) e avaliação de cada regra por lucro, RISCO,
 VOLATILIDADE e OVERFIT; Brier / log loss olhados de várias formas.
 
@@ -45,14 +45,14 @@ import numpy as np
 import pandas as pd
 
 # ================================ CONFIG ================================
-REGIME_DRAFT = "sujo"               # "sujo" (padrão: DataFrame inteiro no treino, draft vira opção na fase limpa) | "limpo" (ver acima)
+REGIME_DRAFT = "limpo"               # "sujo" (padrão: DataFrame inteiro no treino, draft vira opção na fase limpa) | "limpo" (ver acima)
 ARQ_SUJO, ARQ_LIMPO = "backtest_sujo.py", "backtest_limpo.py"
 C_FIXO = 1.0                        # C ÚNICO. 1.0 = valor a priori (padrão do sklearn; está na grade → banco). O C da etapa 1 foi escolhido com estes jogos (otimista)
-LOCKBOX_SERIO = 8448                # nada >= este gid é previsto
+LOCKBOX_SERIO = 700                # nada >= este gid é previsto
 PASSO = 2                           # re-treino a cada PASSO gameids
 PASSO_ESCOLHA = 2                   # re-escolha a cada PASSO_ESCOLHA gameids (múltiplo de PASSO)
 TEMPOS_NOVOS = []                   # v4.5 (Pedro): só os minutos do motor (10–35). Para acrescentar minutos: ex. [5, 40] (precisa de zz5/zz40)
-MIN_TREINO_NOVOS = {5: 150, 40: 120, 45: 120}
+MIN_TREINO_NOVOS = {5: 60, 40: 60, 45: 40}
 INICIO_PREVISOES = None             # 1º jogo PREVISTO (motor sujo). None = INICIO_TESTE_SUJO do motor (700, o da etapa 1: o banco é reaproveitado).
                                     # Menor (par, ex. 300) = o funil começa antes, com os 1ºs modelos treinados em menos jogos (MIN_TREINO_JOGOS ainda vale);
                                     # os treinos a partir do 700 continuam vindo do banco (os pares são os mesmos)
@@ -62,7 +62,7 @@ INICIO_OPCOES_DRAFT = None          # None = max(G_CLEAN, PRO_LIVE_FROM) = 6115 
                                     #        INICIO_TESTE (6628) no regime limpo
 EMBARGO_ESCOLHA = 0                 # a escolha antes do par [a, a+2) usa só jogos < a − EMBARGO_ESCOLHA (0 = supõe que o par anterior já terminou;
                                     # use 2 ou mais se houver mais de 2 jogos ao mesmo tempo). O TREINO dos modelos tem o seu próprio (EMBARGO_JOGOS do motor)
-MIN_HIST = None                     # None = SELECAO_MIN_HIST_JOGOS (300): opção só é elegível com >= isto de jogos executáveis na própria janela
+MIN_HIST = 50                     # None = SELECAO_MIN_HIST_JOGOS (300): opção só é elegível com >= isto de jogos executáveis na própria janela
 MIN_LINHAS = 30                     # métricas de linhas/apostas (todas*, entradas*, roi, sharpe, sortino, maxdd, seq_ruim, calmar, t_*) exigem >= isto
 JANELA_RECENTE = 300                # métricas "_recente": só os últimos N jogos executáveis da janela
 FLAGS_SUJO = ["cWRgrande", "cPROBSgrande"]
@@ -84,7 +84,11 @@ METRICAS = {
 SENTIDO = dict(METRICAS)
 REGRAS = ["bsskill_todas", "llskill_todas", "brier_todas", "ll_todas", "bsskill_entradas", "llskill_entradas", "brier_entradas", "ll_entradas",
           "ppg", "lucro", "roi", "sharpe", "sortino", "calmar", "maxdd", "seq_ruim"]            # as 16 regras simples de hoje (uma por métrica)
-REGRAS_EXTRAS = [                                                                              # regras COMPOSTAS (vazio = só as simples). Exemplos:
+REGRAS_EXTRAS = [
+    dict(nome="brier_com_roi>=0", ordenar="brier_todas", filtros=[("roi", ">=", 0.0)], sem_candidato="melhor_sem_filtro"),
+    dict(nome="bsskill_t_ppg>=1_relaxar", ordenar="bsskill_todas", filtros=[("t_ppg", ">=", 1.0), ("n_apostas", ">=", 40)], sem_candidato="relaxar"),
+    dict(nome="ppg_nao_piorando_ou_nada", ordenar="ppg", filtros=[("queda_ppg", ">=", 0.0)], sem_candidato="nao_apostar"),
+    dict(nome="funcao_menor_vol", funcao=lambda M, El: __import__("numpy").where(El.any(1), __import__("numpy").argmax(__import__("numpy").where(El & __import__("numpy").isfinite(M["vol_ppg"]), -M["vol_ppg"], -__import__("numpy").inf), 1), -1)),                                                                              # regras COMPOSTAS (vazio = só as simples). Exemplos:
     # dict(nome="brier_com_roi>=2%", ordenar="brier_todas", filtros=[("roi", ">=", 0.02)], sem_candidato="melhor_sem_filtro"),
     # dict(nome="bsskill_com_t_ppg>=1_e_100apostas", ordenar="bsskill_todas", filtros=[("t_ppg", ">=", 1.0), ("n_apostas", ">=", 100)], sem_candidato="relaxar"),
     # dict(nome="ppg_se_nao_esta_piorando", ordenar="ppg", filtros=[("queda_ppg", ">=", 0.0)], sem_candidato="nao_apostar"),
@@ -105,21 +109,21 @@ FUNIS = [   # nome, política, minutos em que pode apostar, minutos das métrica
     dict(nome="MULTI_10a35", politica="MULTI", tempos=_T_ANT,   minutos_criterio=_T_ANT),
 ]
 METRICAS_TEMPOS = _T_ANT            # minutos das políticas no recorte entrou/não entrou das métricas de Brier/log loss
-CORTE_TESTE = 7729                  # só descritivo: períodos separados neste jogo
+CORTE_TESTE = 600                  # só descritivo: períodos separados neste jogo
 BASELINE_MODELO = "V6_MOM"          # benchmark "modelo fixo": esta opção (sem flag) em TODOS os jogos, com a política do funil
 BLOCO_RISCO = 150                   # tamanho do bloco (jogos avaliados consecutivos) para % de blocos positivos e pior bloco
 USAR_BANCO = True
-N_PROCESSOS = 0                     # 0 = automático; 1 = em série. Não muda resultado
+N_PROCESSOS = int(__import__('os').environ.get('NPR', '1'))                     # 0 = automático; 1 = em série. Não muda resultado
 GB_POR_PROCESSO = 2.5
-VERIFICAR_LIMPO = True
-B_BOOT = 5000                       # bootstrap por cluster de 10 gameids dos IC de PPG
+VERIFICAR_LIMPO = False
+B_BOOT = 300                       # bootstrap por cluster de 10 gameids dos IC de PPG
 B_MCS = 2000                        # réplicas do Model Confidence Set entre as regras
 B_RC = 5000                         # réplicas do Reality Check (alguma regra bate a escolha ao acaso?)
 ALPHA_MCS = 0.10
 CONFERENCIA_N = 12                  # decisões sorteadas por (funil, janela) para conferir a conta rápida contra a conta direta
 SABOTAGEM_N = 3                     # decisões sorteadas por (funil, janela) em que o futuro é trocado por ruído (nenhuma regra pode mudar a escolha)
 PASTA_SAIDA = "OUT_FUNIL"
-CFG_EXTRA = {}                      # vazio no uso normal (só para testes)
+CFG_EXTRA = dict(G_CLEAN=400, INICIO_TESTE=500, INICIO_TESTE_SUJO=200, BLOCO_JOGOS=50, BLOCO_JOGOS_SUJO=100, MIN_TREINO_JOGOS={10:60,15:60,20:60,25:60,30:60,35:50}, FAMILIAS=['V6','TUDO','V6E','V6WR'], CAL_PARA=['TUDO_INI'], SELECAO_INICIO_AVALIACAO=500, SELECAO_MIN_HIST_JOGOS=50, PRO_LIVE_FROM=420)                      # vazio no uso normal (só para testes)
 # ========================================================================
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
@@ -132,264 +136,6 @@ OPS = {">=": operator.ge, ">": operator.gt, "<=": operator.le, "<": operator.lt}
 
 
 def log(*a): print(time.strftime("%H:%M:%S"), *a, flush=True)
-
-
-# ---------------------------------------------------------------- avaliação: CÓPIA LITERAL do motor v9.0.1 ----------------------------------------------------------------
-# v4.6 (02/10/2026): o PC da Amanda tem o motor v9.0, SEM a seção 10 da v9.0.1 (_alerta_epv_atual não existe lá → AttributeError).
-# Para a AVALIAÇÃO não depender da versão do motor, as funções que o funil usava do motor fora da previsão (seções 5–8, _rng_de/_clu do
-# topo e _alerta_epv_atual da seção 10) estão copiadas AQUI, letra por letra, do backtest_sujo.py v9.0.1. Elas leem o CFG do motor
-# (CFG = BS.CFG, o MESMO dicionário, atribuído em main()). conferir_motor() mostra no log, função por função, se a do motor da pasta é
-# idêntica a esta cópia (o funil usa SEMPRE a cópia). A PREVISÃO (carga, preparar, features, candidatos, walk-forward, banco) continua
-# sendo a do motor da pasta.
-CFG = None
-WAIT_LOG = []
-EXEC_POR_MINUTO = {}
-
-
-def _rng_de(tag, *objs):
-    """v7.2: gerador DERIVADO de (SEED, nome da análise, conteúdo da entrada). A mesma análise sobre os mesmos dados sorteia sempre
-    as mesmas réplicas, em qualquer ordem e com qualquer número de outras análises (v7.1: fluxo sequencial dentro de cada componente)."""
-    import zlib
-    h = zlib.crc32(f"{CFG['SEED']}|{tag}".encode())
-    for o in objs:
-        if o is None: continue
-        if hasattr(o, "columns"): h = zlib.crc32("|".join(map(str, o.columns)).encode(), h)
-        a = np.asarray(o.values if hasattr(o, "values") else o)
-        try: h = zlib.crc32(np.ascontiguousarray(a).tobytes(), h)
-        except Exception: h = zlib.crc32(str(a.tolist()).encode(), h)
-    return np.random.default_rng(np.random.SeedSequence([int(CFG["SEED"]), int(h)]))
-
-
-def _clu(g):
-    """Cluster de CLUSTER_GIDS gameids consecutivos: 1–10, 11–20, … (v7: (g−1)//K; antes g//K deixava o 1º cluster com 9)."""
-    return (np.asarray(g, dtype=np.int64) - 1) // CFG["CLUSTER_GIDS"]
-
-
-def linhas_jogo(base, cand):
-    """1 linha por (t, gameid): scores médios dos 2 lados (simétrico p/ Brier e log)."""
-    b = base[base["cand"] == cand]
-    g = b.groupby(["t","gameid","bloco","cluster"], as_index=False).agg(
-        ll_mod=("ll_mod","mean"), ll_mkt=("ll_mkt","mean"), bs_mod=("bs_mod","mean"), bs_mkt=("bs_mkt","mean"))
-    g["llskill"] = g["ll_mkt"] - g["ll_mod"]; g["bsskill"] = g["bs_mkt"] - g["bs_mod"]
-    return g
-
-
-def _escolha(b, edge_min="cfg"):
-    """Para cada (t, gameid): lado de maior edge e se passa a regra de entrada (edge_min=None => sem limiar)."""
-    if edge_min == "cfg": edge_min = CFG["EDGE_MIN"]
-    g_ = b.groupby(["t","gameid"])["side"]; b = b[(g_.transform("size") == 2) & (g_.transform("nunique") == 2)]      # v7.1: 2 lados DIFERENTES
-    idx = b.groupby(["t","gameid"])[CFG.get("CRITERIO_LADO", "edge")].idxmax()
-    e = b.loc[idx].copy()
-    e["ok"] = (e["odd_t"] >= CFG["ODD_MIN"]) & (e["odd_t"] <= CFG["ODD_MAX"])
-    if edge_min is not None: e["ok"] &= (e[CFG.get("LIMIAR_EM", "edge")] > edge_min)
-    return e
-
-
-def apostas(base, cand, politica="FIRST", X=None, tempos=None, permitido=None, edge_min="cfg", filtro_col=None, dec_modo="acao", registrar_wait=False):
-    """Retorna as apostas (1 linha por aposta) e as linhas de decisão (1 por jogo-minuto avaliado).
-    politica: FIRST (1ª entrada em tempos), MULTI (todas), WAIT (espera se odd < X).
-    permitido(t, odd) -> bool: filtro extra (célula), avaliado com informação só do passado."""
-    tempos = tempos or CFG["TEMPOS_DEPLOY"]
-    b = base[(base["cand"] == cand) & (base["t"].isin(tempos))]
-    e = _escolha(b, edge_min).sort_values(["gameid","t"])
-    if permitido is not None:
-        e["ok"] = e["ok"] & np.array([bool(permitido(t, o)) for t, o in zip(e["t"], e["odd_t"])], dtype=bool)
-    if filtro_col is not None:
-        e["ok"] = e["ok"] & (e[filtro_col] == 1)
-    if politica == "MULTI":
-        dec = e; bets = e[e["ok"]]
-    elif politica == "FIRST":
-        bets = e[e["ok"]].groupby("gameid").head(1)  # aposta = 1º tempo com entrada válida
-        # v7.1: dec_modo="acao" (padrão) = o jogo-minuto em que a aposta ACONTECE → métricas 'geral' alinhadas ao lucro.
-        #       dec_modo="universo" = 1º checkpoint de cada jogo, independe da política → base do teste PRIMÁRIO de skill.
-        #       (v7 usava sempre o 1º checkpoint: 22–42% das apostas de produção aconteciam num minuto posterior)
-        dec = bets if dec_modo == "acao" else e.groupby("gameid").head(1)
-    elif politica == "WAIT":
-        rows, decs = [], []
-        for gid, grp in e.groupby("gameid", sort=False):
-            grp = grp.sort_values("t"); decs.append(grp.iloc[0]); esperando = False; t_sinal = None; apostou = False
-            for _, r in grp.iterrows():
-                if not r["ok"]: continue
-                if r["odd_t"] < X and not esperando: esperando = True; t_sinal = r["t"]; continue   # 1º sinal barato: espera
-                if esperando and r["odd_t"] < X: continue                             # ainda barato: segue esperando
-                rows.append(r); apostou = True; break
-            if registrar_wait:                                                         # v7.2: registra também quem EXPIROU esperando
-                WAIT_LOG.append(dict(cand=cand, X=X, gameid=gid, status="aposta" if apostou else ("expirou_esperando" if esperando else "sem_sinal"), t_primeiro_sinal=t_sinal))
-        bets = pd.DataFrame(rows) if rows else e.iloc[0:0]; dec = bets if dec_modo == "acao" else pd.DataFrame(decs)
-    else:
-        raise ValueError(politica)
-    bets = bets.copy()
-    bets["lucro"] = np.where(bets["y"] == 1, (bets["odd_t"] - 1) * CFG["STAKE"], -CFG["STAKE"])
-    return bets, dec
-
-
-def _maxdd(lucros):
-    c = np.cumsum(lucros); pico = np.maximum.accumulate(np.concatenate([[0], c]))[1:]
-    return float(np.max(pico - c)) if len(c) else 0.0
-
-
-def _seq_ruim(lucros):
-    best = cur = 0
-    for l in lucros:
-        cur = cur + 1 if l < 0 else 0; best = max(best, cur)
-    return int(best)
-
-
-def _cluster_sums(x, clusters):
-    """Somas e tamanhos por cluster (x pode ser 1-D ou 2-D: obs × colunas)."""
-    codes, uniq = pd.factorize(np.asarray(clusters)); n = len(uniq)
-    x = np.asarray(x, float); tam = np.bincount(codes, minlength=n).astype(float)
-    if x.ndim == 1: soma = np.bincount(codes, weights=x, minlength=n)
-    else: soma = np.vstack([np.bincount(codes, weights=x[:, j], minlength=n) for j in range(x.shape[1])]).T
-    return soma, tam, n
-
-
-def boot_media(x, clusters, B=None, rng=None):
-    """IC por bootstrap de clusters (média das observações). Vetorizado: sorteio multinomial de clusters."""
-    rng = rng or _rng_de("boot", x, clusters); B = B or CFG["B_BOOT"]
-    x = np.asarray(x, float); soma, tam, n = _cluster_sums(x, clusters)
-    cnt = rng.multinomial(n, np.full(n, 1.0 / n), size=B).astype(float)          # B × n clusters
-    out = (cnt @ soma) / (cnt @ tam)
-    m = x.mean(); se = out.std(ddof=1)
-    # p_gt0 é PROBABILIDADE BOOTSTRAP de efeito positivo (percentil), não um p-valor frequentista.
-    # p_valor é o unilateral com bootstrap centrado na nula, com a correção (b+1)/(B+1) (nunca 0).
-    p_nulo = float((np.sum((out - m) >= m) + 1) / (B + 1))
-    p_neg = float((np.sum((out - m) <= m) + 1) / (B + 1))                         # v8.4: H1 média < 0 (mesma distribuição centrada)
-    return dict(media=m, se=se, t=(m/se if se>0 else np.nan), ic_lo=np.quantile(out,0.025), ic_hi=np.quantile(out,0.975),
-                p_gt0=(out>0).mean(), p_valor=p_nulo, p_valor_neg=p_neg,
-                lb95_basico=2 * m - np.quantile(out, 0.95), ub95_basico=2 * m - np.quantile(out, 0.05))   # v8.4: duais do p centrado (p<0,05 ⇔ lb95>0)
-
-
-def mcs(perdas, clusters, alpha=None, B=None, rng=None):
-    """Model Confidence Set (Hansen-Lunde-Nason 2011, estatística T_max, bootstrap por cluster, vetorizado).
-    perdas: DataFrame (obs × modelos) — MENOR = MELHOR (use −skill). Retorna sobreviventes e p-valores de eliminação."""
-    rng = rng or _rng_de("mcs", perdas, clusters); alpha = alpha or CFG["ALPHA_MCS"]; B = B or CFG.get("B_MCS", CFG["B_BOOT"])
-    M = list(perdas.columns); L_all = perdas.values.astype(float)
-    soma_all, tam, n = _cluster_sums(L_all, clusters)                              # n clusters × m
-    cnt = rng.multinomial(n, np.full(n, 1.0 / n), size=B).astype(float); N_b = cnt @ tam   # B × 1
-    elim = []; p_acum = 0.0
-    while len(M) > 1:
-        cols = [perdas.columns.get_loc(c) for c in M]
-        L = L_all[:, cols]; d = L - L.mean(axis=1, keepdims=True); dbar = d.mean(axis=0)
-        soma = soma_all[:, cols]; soma_d = soma - soma.mean(axis=1, keepdims=True)     # somas por cluster de d_ij
-        boot = (cnt @ soma_d) / N_b[:, None]                                          # B × |M|
-        se = boot.std(axis=0, ddof=1); se[se == 0] = np.nan
-        tstat = dbar / se
-        if np.all(np.isnan(tstat)): break                                  # guarda: candidatos idênticos
-        T = np.nanmax(tstat)
-        Tb = np.nanmax((boot - dbar) / se, axis=1)
-        p_etapa = float((np.sum(Tb >= T) + 1) / (B + 1))                   # (b+1)/(B+1): p nunca é 0
-        p_acum = max(p_acum, p_etapa)                                      # HLN: p do MCS é o MÁXIMO acumulado
-        pior = M[int(np.nanargmax(tstat))]
-        if p_acum < alpha:
-            elim.append(dict(eliminado=pior, p=p_acum, p_etapa=p_etapa, t=float(T))); M.remove(pior)
-        else:
-            elim.append(dict(eliminado=None, p=p_acum, p_etapa=p_etapa, t=float(T)))
-            break
-    return M, pd.DataFrame(elim)
-
-
-def nula_empirica_max(M_series, clusters, B=None, rng=None, escopo=""):
-    """Bootstrap empírico e studentizado do MÁXIMO, clusterizado (estilo White 2000 Reality Check / Hansen 2005 SPA).
-    M_series: obs × séries (skill por jogo, ou lucro por jogo). H0: nenhuma série tem média > 0.
-    p_reality_check: recentra TODAS as séries (configuração menos favorável — conservador com muitas séries ruins).
-    p_SPA_c: não recentra as séries claramente piores (t ≤ −√(2 ln ln n)) — menos conservador, mais poder.
-    p_max_mean: mesma lógica sem studentizar. ATENÇÃO: o p é do MÁXIMO — responde 'existe alguma série > 0 no escopo?',
-    não certifica um candidato (para isso: MCS e StepM). O escopo vai escrito no resultado."""
-    rng = rng or _rng_de("rc", M_series, clusters); B = int(B or CFG.get("B_RC", 50000))
-    X = M_series.values.astype(float); n_obs = X.shape[0]; soma, tam, n = _cluster_sums(X, clusters)
-    meds = []
-    for b0 in range(0, B, 5000):
-        bb = min(5000, B - b0); cnt = rng.multinomial(n, np.full(n, 1.0 / n), size=bb).astype(float)
-        meds.append((cnt @ soma) / (cnt @ tam)[:, None])
-    med = np.vstack(meds); obs = X.mean(axis=0); se = med.std(axis=0, ddof=1); se[se == 0] = np.nan
-    t_obs = obs / se
-    if np.all(np.isnan(t_obs)):
-        return dict(escopo=escopo, k_series=X.shape[1], erro="todas as séries constantes"), pd.Series(t_obs, index=M_series.columns)
-    maxt = np.nanmax((med - obs) / se, axis=1); t_max = float(np.nanmax(t_obs)); i = int(np.nanargmax(t_obs))
-    thr = -np.sqrt(2 * np.log(np.log(max(n_obs, 16)))); mu_c = np.where(t_obs <= thr, obs, 0.0)
-    maxt_spa = np.maximum(np.nanmax((med - obs + mu_c) / se, axis=1), 0.0); T_spa = max(t_max, 0.0)
-    maxm = np.nanmax(med - obs, axis=1); m_max = float(np.nanmax(obs)); exc = int(np.sum(maxt >= t_max))
-    return dict(escopo=escopo, k_series=X.shape[1], n_obs=n_obs, n_clusters=n, B=B,
-                barra_p95=float(np.quantile(maxt, 0.95)), barra_p99=float(np.quantile(maxt, 0.99)),
-                melhor=M_series.columns[i], t_melhor=t_max, n_excedencias=exc, p_min=1.0 / (B + 1),
-                p_reality_check=float((exc + 1) / (B + 1)),
-                p_SPA_c_aprox=float((np.sum(maxt_spa >= T_spa) + 1) / (B + 1)), limiar_SPA=float(thr), n_series_nao_recentradas=int(np.sum(t_obs <= thr)),
-                p_max_mean=float((np.sum(maxm >= m_max) + 1) / (B + 1)),
-                dispersao_t=float(np.nanstd(t_obs, ddof=1))), pd.Series(t_obs, index=M_series.columns)
-
-
-def universo_executavel(frames):
-    """v8.3 (lógica idêntica ao bloco v7.2/v7.5/v7.6, só virou função): jogos com os 2 lados e odd válida no MESMO minuto de decisão
-    e algum lado apostável pela política (ODD_MIN–ODD_MAX). Usa só lados e odds — nunca o resultado. Devolve (executáveis, observáveis).
-    v8.6: guarda também o conjunto executável POR MINUTO em EXEC_POR_MINUTO (mesma regra de odds do PPG)."""
-    uv, uobs = set(), set(); EXEC_POR_MINUTO.clear()
-    for t_ in CFG["TEMPOS_DEPLOY"]:
-        f_ = frames[t_]; dois_ = f_.groupby("gameid")["side"].transform("nunique").eq(2)
-        ambos_ = (np.isfinite(f_["odd_t"]) & (f_["odd_t"] > 1)).groupby(f_["gameid"]).transform("all")
-        ambos_ &= f_["odd_t"].between(CFG["ODD_MIN"], CFG["ODD_MAX"]).groupby(f_["gameid"]).transform("any")
-        uobs |= set(f_.loc[dois_, "gameid"].unique()); ex_t = set(f_.loc[dois_ & ambos_, "gameid"].unique()); uv |= ex_t; EXEC_POR_MINUTO[t_] = ex_t
-    return np.array(sorted(uv)), uobs
-
-
-def _alerta_epv_atual(fits):
-    """alerta_EPV recalculado com o EPV_ALERTA DESTA rodada (os treinos reaproveitados do banco traziam o da rodada que os gravou).
-    Mesma conta do walk_forward: EPV = jogos de treino ÷ (nº de features + 1), sem arredondar."""
-    if fits is None or not len(fits) or not {"alerta_EPV", "EPV", "n_treino_jogos", "n_feats"} <= set(fits.columns): return fits
-    m = fits["EPV"].notna() & fits["n_treino_jogos"].notna() & fits["n_feats"].notna()
-    if m.any():
-        epv = fits.loc[m, "n_treino_jogos"].astype(float) / (fits.loc[m, "n_feats"].astype(float) + 1.0).clip(lower=1.0)
-        fits.loc[m, "alerta_EPV"] = [bool(x) for x in (epv < float(CFG["EPV_ALERTA"])).values]
-    return fits
-
-
-
-COPIAS_MOTOR = ["_rng_de", "_clu", "linhas_jogo", "_escolha", "apostas", "_maxdd", "_seq_ruim", "_cluster_sums", "boot_media", "mcs", "nula_empirica_max",
-                "universo_executavel", "_alerta_epv_atual"]
-# o que o validar_funil usa do motor da pasta (PREVISÃO e constantes) e as chaves do CFG que ele LÊ: falta qualquer um → para logo no início
-ATRIB_MOTOR = ["CFG", "carregar_bruto", "preparar", "features", "candidatos", "blocos_teste", "walk_forward_dev", "hash_cadeia", "_pastas", "_reset_rngs",
-               "_iguais", "FAM_DEF", "ATOM_BASE", "ATOM_RECON", "ORIGEM_ATOM", "ORIGEM_DADOS", "GOLD5", "IMP5", "COLS_WRPROBS", "COLS_LOLDRAFT", "CHECKPOINTS"]
-CHAVES_CFG = ["G_CLEAN", "FAMILIAS", "CAL_PARA", "INICIO_TESTE", "INICIO_TESTE_SUJO", "MIN_TREINO_JOGOS", "TEMPOS", "PASTA_DADOS", "PASTA_PREVISOES",
-              "PREFIXO_GRANDE", "PREFIXO_LIMPO", "SEED", "SELECAO_MIN_HIST_JOGOS", "EPV_ALERTA", "CLUSTER_GIDS", "EDGE_MIN", "ODD_MIN", "ODD_MAX", "STAKE"]
-# SHA-256 do trecho de PREVISÃO (topo do motor até "# 5. BASE LONGA", sem o CFG; mesma conta do próprio motor), igual na v9.0 e na v9.0.1
-# segundo o docs/MUDANCAS_v9.0.1.md do pacote (conferido: é o valor do backtest_sujo.py/backtest_limpo.py v9.0.1 com que este script foi testado)
-SHA_PREVISAO_V90 = {"sujo": "3693c7c9a42e26216d114899f0f651c4ae1c40616c1030948b15fd5b74b98ed5", "limpo": "9cfd046f92425e34a3d7e9f9cf8ff95f1df38ed8b21542409a069544a73fe864"}
-
-
-def _sha_previsao(arq):
-    """mesma conta do motor (_sha_codigo_previsao da v9.0 / _sha_previsao_de da v9.0.1): SHA-256 do topo até "# 5. BASE LONGA", sem o CFG"""
-    import ast
-    src = open(arq, encoding="utf-8").read(); linhas = src.splitlines(keepends=True)
-    for n in ast.parse(src).body:
-        if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", None) == "CFG":
-            linhas = linhas[:n.lineno - 1] + linhas[n.end_lineno:]; break
-    txt = "".join(linhas); i = txt.find("\n# 5. BASE LONGA")
-    return hashlib.sha256(txt[:i].encode("utf-8")).hexdigest() if i > 0 else None
-
-
-def conferir_motor(B, tag, arq):
-    """v4.6: o motor da pasta tem tudo o que o validar_funil usa? Qual versão é? O trecho de previsão é o da v9.0/v9.0.1? As funções da
-    avaliação do motor são iguais às cópias deste script? Para no início (antes de qualquer treino) se faltar algo."""
-    import inspect
-    falta = [a for a in ATRIB_MOTOR if not hasattr(B, a)]
-    falta_cfg = [k for k in CHAVES_CFG if k not in (getattr(B, "CFG", None) or {})]
-    if falta or falta_cfg:
-        raise SystemExit(f"motor {arq}: esta versão não tem o que o validar_funil precisa — faltam {falta + ['CFG[' + k + ']' for k in falta_cfg]}. Nada foi treinado.")
-    versao = "v9.0.1" if hasattr(B, "_alerta_epv_atual") else "SEM a seção 10 da v9.0.1 (v9.0 ou anterior)"
-    try: sha = _sha_previsao(os.path.join(AQUI, arq))
-    except Exception as e: sha = None; log(f"motor {tag}: não consegui calcular o SHA do trecho de previsão ({type(e).__name__}: {e})")
-    ref = SHA_PREVISAO_V90.get(tag); igual = bool(sha) and sha == ref
-    ig, dif, aus = [], [], []
-    for nm in COPIAS_MOTOR:
-        if not hasattr(B, nm): aus.append(nm); continue
-        try: (ig if inspect.getsource(getattr(B, nm)) == inspect.getsource(globals()[nm]) else dif).append(nm)
-        except (OSError, TypeError): dif.append(nm + " (sem fonte)")
-    log(f"motor {tag} ({arq}): versão {versao} · trecho de PREVISÃO SHA-256 {(sha or 'n/d')[:8]}…{(sha or 'n/d')[-4:]} "
-        + ("= o da v9.0/v9.0.1 (o mesmo código com que este script foi testado)" if igual else
-           f"≠ o da v9.0/v9.0.1 ({ref[:8]}…{ref[-4:]}): ATENÇÃO — o funil usa as previsões DESTE motor (o da etapa 1 desta pasta), mas este código não foi testado com ele")
-        + f" · avaliação: o funil usa as {len(COPIAS_MOTOR)} funções copiadas da v9.0.1 (no motor: {len(ig)} idênticas"
-        + (f", DIFERENTES {dif}" if dif else "") + (f", ausentes {aus}" if aus else "") + ")")
-    return dict(versao=versao, sha_previsao=sha, previsao_igual_v90_v901=igual, copias_identicas=ig, copias_diferentes=dif, ausentes_no_motor=aus)
 
 
 # ---------------------------------------------------------------- motores ----------------------------------------------------------------
@@ -438,7 +184,7 @@ def motores():
     M = {}
     for tag, arq in (("sujo", ARQ_SUJO), ("limpo", ARQ_LIMPO)):
         if tag == "limpo" and REGIME_DRAFT != "limpo": continue
-        B = carregar_motor(arq, tag); info = conferir_motor(B, tag, arq); K = configurar(B, tag); K["motor_info"] = info; M[tag] = (B, K)
+        B = carregar_motor(arq, tag); M[tag] = (B, configurar(B, tag))
     return M
 
 
@@ -606,7 +352,7 @@ def montar_base_funil(B, preds, frames, flag_ini):
     qc = base["q_devig_t"].clip(1e-6, 1 - 1e-6)
     base["ll_mkt"] = -(base["y"] * np.log(qc) + (1 - base["y"]) * np.log(1 - qc))
     base["bs_mod"] = (base["p"] - base["y"]) ** 2; base["bs_mkt"] = (base["q_devig_t"] - base["y"]) ** 2
-    base["cluster"] = _clu(base["gameid"]).astype(int)
+    base["cluster"] = B._clu(base["gameid"]).astype(int)
     return base, info
 
 
@@ -757,7 +503,7 @@ def valores_direto(B, D, j, a, w):
                       np.sum((p - y) ** 2), np.sum((q - y) ** 2)])
         lg = pd.Series(L).groupby(bt["g"][mb]).sum()                                                    # lucro por jogo, das apostas cruas
         V = _metricas(D["T"][j][m].sum(0), e, L.sum(), (L ** 2).sum(), (np.minimum(L, 0) ** 2).sum(), int(m.sum()),
-                      _maxdd(L) if len(L) else 0.0, _seq_ruim(L) if len(L) else 0, float((lg ** 2).sum()))
+                      B._maxdd(L) if len(L) else 0.0, B._seq_ruim(L) if len(L) else 0, float((lg ** 2).sum()))
         if len(L) >= MIN_LINHAS: V["sharpe"] = (L.mean() / L.std(ddof=1)) if L.std(ddof=1) > 0 else np.nan   # motor: roi / sd (ddof=1)
         return V, m
     V, m = janela(w)
@@ -836,7 +582,7 @@ def serie_procedimento(G, D, segs, idx_seg):
 # ---------------------------------------------------------------- funil: avaliação ----------------------------------------------------------------
 def _bt(B, s):
     if len(s) < 30: return dict(media=np.nan, ic_lo=np.nan, ic_hi=np.nan, p_valor=np.nan, n=len(s))
-    r = boot_media(s.values.astype(float), _clu(s.index.values), B=B_BOOT); r["n"] = len(s); return r
+    r = B.boot_media(s.values.astype(float), B._clu(s.index.values), B=B_BOOT); r["n"] = len(s); return r
 
 
 def _media_se(s):
@@ -1019,21 +765,13 @@ def rodar_filhos(n):
         print("\n".join(cauda), flush=True)
     if falhas: raise SystemExit(f"{len(falhas)} processo(s) falharam: " + "; ".join(f"parte {i} (código {rc}, ver {lg})" for i, rc, lg in falhas)
                                 + " — os que terminaram gravaram o treino no BANCO_PREVISOES (na próxima vez vem de lá)")
-    banco = []
-    for i, _, _, lg in procs:
-        try: banco += [f"parte {i}: " + l.strip()[9:] for l in open(lg, encoding="utf-8", errors="replace")
-                       if "banco" in l and any(s_ in l for s_ in ("reaproveitados", "DESLIGADO", "NÃO consegui", "chave diferente", "ilegível", "mudou"))]
-        except Exception: pass
-    if banco: log(f"BANCO_PREVISOES (dos logs dos processos; {len(banco)} linha(s)):\n    " + "\n    ".join(banco[:60]) + ("\n    …" if len(banco) > 60 else ""))
     log(f"processos terminados em {(time.time() - t0) / 60:.1f} min")
 
 
 
 # ---------------------------------------------------------------- principal ----------------------------------------------------------------
 def main():
-    global CFG
     t0 = time.time(); M = motores(); BS, KS = M["sujo"]
-    CFG = BS.CFG                                                                             # v4.6: as cópias da avaliação leem o CFG do motor sujo (o mesmo dicionário)
     G_CLEAN, L0 = int(BS.CFG["G_CLEAN"]), KS["L0"]
     hist_ini = int(HIST_INICIO or BS.CFG["INICIO_TESTE_SUJO"]); min_hist = int(MIN_HIST if MIN_HIST is not None else BS.CFG["SELECAO_MIN_HIST_JOGOS"])
     ini_draft = int(INICIO_OPCOES_DRAFT or (BS.CFG["INICIO_TESTE"] if REGIME_DRAFT == "limpo" else max(G_CLEAN, int(BS.CFG.get("PRO_LIVE_FROM") or G_CLEAN))))
@@ -1047,7 +785,7 @@ def main():
         elif "funcao" not in r: assert r["ordenar"] in METRICAS, f"regra {r['nome']}: ordenar '{r['ordenar']}' não é métrica"
     P = [(n, a, b) for n, a, b in (("sujo", hist_ini, G_CLEAN), (f"limpo_{G_CLEAN}_{BS.CFG['INICIO_TESTE'] - 1}", G_CLEAN, int(BS.CFG["INICIO_TESTE"])),
                                    (f"limpo_{BS.CFG['INICIO_TESTE']}_{CORTE_TESTE - 1}", int(BS.CFG["INICIO_TESTE"]), CORTE_TESTE), (f"limpo_{CORTE_TESTE}_{L0 - 1}", CORTE_TESTE, L0)) if b > a]
-    log(f"VALIDAR FUNIL v4.6 · regime draft {REGIME_DRAFT} · C fixo {C_FIXO} · treino a cada {PASSO} · re-escolha a cada {PASSO_ESCOLHA} · minutos {KS['todos']} · "
+    log(f"VALIDAR FUNIL v4.5 · regime draft {REGIME_DRAFT} · C fixo {C_FIXO} · treino a cada {PASSO} · re-escolha a cada {PASSO_ESCOLHA} · minutos {KS['todos']} · "
         f"histórico desde {hist_ini} · opções com draft desde {ini_draft} · flags (início): {flag_ini} · {len(regras)} regras · lockbox {L0}+ NUNCA previsto · períodos {P}")
     for tag, (B, K) in M.items(): log(f"motor {tag}: famílias {B.CFG['FAMILIAS']} · CAL {[c for c in B.CFG['CAL_PARA'] if c.split('_')[0] in B.CFG['FAMILIAS']]} · ATOM {B.ORIGEM_ATOM}")
     brutos = carregar_brutos(BS, KS, conferir=True)
@@ -1074,7 +812,7 @@ def main():
         preds = pd.concat([p_["preds"] for p_ in partes if len(p_["preds"])], ignore_index=True); fits = pd.concat([p_["fits"] for p_ in partes if len(p_["fits"])], ignore_index=True)
         frames = {tag: preparar_frames(B, K, brutos) for tag, (B, K) in M.items()}
     assert int(preds["gameid"].max()) < L0, "previsão de jogo do lockbox — ABORTADO"
-    fits = _alerta_epv_atual(fits)
+    fits = BS._alerta_epv_atual(fits)
     for tag in M: conferir_retreino(M[tag][0], tag, preds[preds["motor"] == tag], fits[fits["motor"] == tag], BL[tag])
     preds.to_csv(os.path.join(OUT, "previsoes_funil.csv.gz"), index=False); fits.to_csv(os.path.join(OUT, "ajustes_funil.csv.gz"), index=False)
     # modelos das famílias so_limpo (com draft; no regime limpo também V6L/V6WRL) só viram opção a partir de ini_draft (fase limpa)
@@ -1085,7 +823,7 @@ def main():
     # ---------------- base, universo, linhas por (jogo, minuto) ----------------
     base, info = montar_base_funil(BS, preds, frames["sujo"], flag_ini)
     BS.CFG["TEMPOS"] = list(KS["todos"]); BS.CFG["TEMPOS_DEPLOY"] = sorted({int(t) for f_ in FUNIS for t in f_["tempos"]} | {int(t) for t in METRICAS_TEMPOS})
-    uv, _ = universo_executavel(frames["sujo"])
+    uv, _ = BS.universo_executavel(frames["sujo"])
     G = np.array(sorted(int(g) for g in uv if hist_ini <= int(g) < L0), dtype=np.int64); Gs = set(G.tolist())
     assert len(G) and int(G.max()) < L0 and int(base["gameid"].max()) < L0 and int(info["gameid"].max()) < L0, "AUDITORIA: jogo do lockbox no universo/base — ABORTADO"
     modelos = sorted(base["cand"].unique())
@@ -1093,13 +831,13 @@ def main():
     base_por_c = {c: d for c, d in base.groupby("cand")}
     GMf, start_mod = {}, {}
     for c in modelos:
-        g = linhas_jogo(base_por_c[c], c); g = g[g["gameid"].isin(Gs)]
+        g = BS.linhas_jogo(base_por_c[c], c); g = g[g["gameid"].isin(Gs)]
         GMf[c] = g.merge(FLG, on=["t", "gameid"], how="left").fillna({F: False for F in FLAGS}); start_mod[c] = int(g["gameid"].min()) if len(g) else L0
     memo = {}
     def apostas_de(c, F, pol, tempos):
         k = (c, F, pol, tempos)
         if k not in memo:
-            b, _ = apostas(base_por_c[c], c, pol, tempos=list(tempos), filtro_col=F)
+            b, _ = BS.apostas(base_por_c[c], c, pol, tempos=list(tempos), filtro_col=F)
             memo[k] = b[b["gameid"].isin(Gs)][["gameid", "t", "side", "p", "y", "q_devig_t", "odd_t", "edge", "lucro"]].copy()
         return memo[k]
     log(f"universo executável (minutos {BS.CFG['TEMPOS_DEPLOY']}) {hist_ini}–{L0 - 1}: {len(G)} jogos (denominador do PPG) · {len(modelos)} modelos")
@@ -1244,12 +982,12 @@ def main():
                     m_, se_ = _media_se(Lr[r1] - Lr[r2]); comp.append(dict(funil=fu["nome"], janela=jan, conjunto=conj, regra_1=r1, regra_2=r2, n_jogos=len(js), delta_ppg=m_, se=se_, z=m_ / se_ if se_ and se_ > 0 else np.nan))
                 for rn_, (sr_, _nb) in refs.items():
                     m_, se_ = _media_se(Lr[r1] - sr_.reindex(js)); comp.append(dict(funil=fu["nome"], janela=jan, conjunto=conj, regra_1=r1, regra_2=rn_.split(" ")[0], n_jogos=len(js), delta_ppg=m_, se=se_, z=m_ / se_ if se_ and se_ > 0 else np.nan))
-            cl = _clu(js)
+            cl = BS._clu(js)
             try:
-                vivos, _ = mcs(-Lr, cl, alpha=ALPHA_MCS, B=B_MCS)
+                vivos, _ = BS.mcs(-Lr, cl, alpha=ALPHA_MCS, B=B_MCS)
             except Exception as e_: vivos = []; log(f"MCS não calculado ({type(e_).__name__}: {e_})")
             try:
-                rc, _ = nula_empirica_max(Lr.sub(acaso, axis=0), cl, B=B_RC, escopo=f"{tag}: PPG de cada regra − escolha ao acaso")
+                rc, _ = BS.nula_empirica_max(Lr.sub(acaso, axis=0), cl, B=B_RC, escopo=f"{tag}: PPG de cada regra − escolha ao acaso")
             except Exception as e_: rc = {}; log(f"Reality Check não calculado ({type(e_).__name__}: {e_})")
             mcs_rows.append(dict(funil=fu["nome"], janela=jan, conjunto=conj, n_jogos=len(js), n_regras=len(nomes_r), mcs_alpha=ALPHA_MCS, mcs_regras=" · ".join(vivos),
                                  rc_melhor=rc.get("melhor"), rc_p_reality_check=rc.get("p_reality_check"), rc_p_spa=rc.get("p_SPA_c_aprox")))
@@ -1286,7 +1024,7 @@ def main():
     pd.concat(lucro_jogo, ignore_index=True).to_csv(os.path.join(OUT, "lucro_por_jogo.csv.gz"), index=False)   # AUDITORIA: lucro e nº de apostas de cada opção por jogo
     pd.concat(jogos_comuns, ignore_index=True).to_csv(os.path.join(OUT, "jogos_comuns.csv.gz"), index=False)
     escrever_resumo(R, PR, MC, MT, P, CP, pd.DataFrame(dist_rows), pd.DataFrame(momini), dict(regime=REGIME_DRAFT, C=C_FIXO, hist_ini=hist_ini, ini_draft=ini_draft, flag_ini=flag_ini, n_opcoes=len(opcoes), n_G=len(G), t0=t0, regras=nomes_r))
-    json.dump(dict(regime=REGIME_DRAFT, motor_info={tag: K["motor_info"] for tag, (B, K) in M.items()}, motores={tag: hashlib.sha256(open(os.path.join(AQUI, ARQ_SUJO if tag == "sujo" else ARQ_LIMPO), "rb").read()).hexdigest() for tag in M},
+    json.dump(dict(regime=REGIME_DRAFT, motores={tag: hashlib.sha256(open(os.path.join(AQUI, ARQ_SUJO if tag == "sujo" else ARQ_LIMPO), "rb").read()).hexdigest() for tag in M},
                    script_sha256=hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest(), C_FIXO=C_FIXO, PASSO=PASSO, PASSO_ESCOLHA=PASSO_ESCOLHA,
                    tempos=KS["todos"], min_treino=KS["min_nov"], lockbox_serio=L0, hist_inicio=hist_ini, inicio_opcoes_draft=ini_draft, embargo_escolha=EMBARGO_ESCOLHA, flag_inicio=flag_ini, min_hist=min_hist, conjuntos=list(CONJUNTOS), n_acaso=N_ACASO,
                    min_linhas=MIN_LINHAS, janela_recente=JANELA_RECENTE, metricas=METRICAS, regras=[r if isinstance(r, str) else {k: (v if k != "funcao" else "função") for k, v in r.items()} for r in regras],
@@ -1297,7 +1035,7 @@ def main():
 def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info):
     f_ = lambda v, fmt="+.4f": "n/d" if v is None or (isinstance(v, float) and not np.isfinite(v)) else format(v, fmt)
     cad2 = f"a_cada_{PASSO_ESCOLHA}"
-    txt = [f"VALIDAÇÃO DO FUNIL v4.6 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
+    txt = [f"VALIDAÇÃO DO FUNIL v4.5 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
            f"{info['n_G']} jogos executáveis desde {info['hist_ini']} · opções com draft desde {info['ini_draft']}",
            f"Treino e re-escolha a cada {PASSO}/{PASSO_ESCOLHA} jogos, histórico ACUMULADO · PPG = lucro ÷ jogos executáveis · tudo nos MESMOS jogos dentro de cada (funil, janela) · "
            f"IC 95% bootstrap por cluster de 10 gameids",
