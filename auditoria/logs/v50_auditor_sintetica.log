@@ -1,0 +1,37 @@
+AUDITORIA INDEPENDENTE de /tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/v50/A/OUT_FUNIL · lockbox 700 · PASSO 2 · PASSO_ESCOLHA 2 · MIN_HIST 50 · embargo 0
+[OK ] A1 nenhum jogo do lockbox nas saídas — 28 arquivos lidos
+[OK ] A2a treino termina antes do par (gid_treino_max < início do par) — 11688 treinos · folga mínima 1
+[OK ] A2b cada treino prevê um único par
+[OK ] A2c um treino por (motor, minuto, candidato, par)
+[OK ] A3 toda previsão tem o treino do seu par, terminado antes do par — 49428 previsões · 11688 (minuto, candidato, par)
+[OK ] A4a pares contíguos de <= PASSO_ESCOLHA jogos — 250 pares
+[OK ] A4b nº de opções elegíveis recalculado == gravado — 250 decisões sorteadas × conjuntos · 0 divergências
+[OK ] A4c a opção escolhida era elegível na decisão — 0 escolhas não elegíveis
+[OK ] A5 regras ppg/lucro/roi recalculadas do zero == trilhas (escolha e PPG histórico) — 64800 decisões conferidas em 288 combinações · 0 divergências
+[OK ] A6 PPG do procedimento 'ppg' recalculado == resumo_funil — 96 combinações · dif máx 1.11e-16
+[OK ] A10 próxima escolha (regras ppg/lucro/roi) recalculada do zero == proximas_escolhas.csv; decisão <= lockbox — 288 próximas escolhas conferidas
+[OK ] A8 livro de apostas == lucro por par das trilhas == PPG e nº de apostas do resumo; aposta só da opção escolhida no par — 1104 séries (regra × funil × janela × conjunto) · 222315 apostas
+[FALHOU] A9 ensemble por minuto refeito do livro dos funis T10…T35 (FIRST = 1º minuto com aposta; MULTI = todos) == ensemble_minutos.csv — 276 séries · minutos ['T10_EV5', 'T15_EV5', 'T20_EV5', 'T25_EV5', 'T30_EV5', 'T35_EV5']; FIRST/comum/todas/brier_com_roi>=0: linha do ensemble ausente; MULTI/comum/todas/brier_com_roi>=0: linha do ensemble ausente; FIRST/comum/todas/brier_entradas: linha do ensemble ausente; MULTI/comum/todas/brier_entradas: linha do ensemble ausente; FIRST/comum/todas/brier_todas: linha do ensemble ausente
+[OK ] A11 CLV/markout refeitos da tabela de odds (q em t+h do mesmo jogo/lado; fechamento = última odd do jogo DEPOIS da aposta) == livro — 222315 apostas · 202341 com fechamento · horizontes [5, 10, 15, 20, 25]
+[OK ] A12 EV calibrado: última aposta usada na calibração < início do par; sem histórico suficiente = EV do modelo; EV = p·odd − 1 — 222315 apostas com histórico de calibração · violações 0/0/0
+[OK ] A15 regra de entrada: EV > limiar do funil (0 / 5% / 10%), edge > 0, FIRST com no máximo 1 aposta por jogo — 24 funis
+[OK ] A14 ROI, ROI esperado (EV do modelo e calibrado), CLV, % supera e nº de apostas do resumo == recalculados do livro — 1104 séries
+[OK ] A13 MODO SOMBRA refeito dos eventos: decisões só com >= N_SOMBRA jogos de sombra, sombra começa antes do par, promoção ⇔ métrica da sombra > produção; produção por par refeita dos eventos dá o PPG do sombra.csv — 552 séries · 517 promoções · 752 rejeições
+[OK ] A7 índices: último jogo do histórico e do treino < início do par — tabela em auditoria_indices.csv
+          funil  decisao_a par_jogos               escolhida janela_historico  ultimo_jogo_no_historico  jogos_no_historico_da_escolhida  opcoes_elegiveis  treino_da_previsao_usada_ate
+MULTI_10a35_EV5        678   678–679           TUDO_INI_CALR       [420, 678)                       677                              258                81                           677
+            T10        434   434–435                 V6E_INI       [200, 434)                       433                              232                18                           433
+            T10        532   532–533       V6E_INI|cWRgrande       [200, 532)                       531                              330                81                           531
+       T10_EV10        320   320–321                V6WR_INI       [200, 320)                       319                              118                18                           319
+        T10_EV5        574   574–575 TUDO_INI_CALR|cWRgrande       [420, 574)                       573                              154                81                           573
+            T15        608   608–609                 V6E_MOM       [200, 608)                       607                              406                81                           607
+       T15_EV10        358   358–359                V6WR_INI       [200, 358)                       357                              156                18                           357
+       T25_EV10        462   462–463          V6E_INI|bisolo       [400, 462)                       461                               62                36                           461
+        T25_EV5        274   274–275    V6E_MOM|cPROBSgrande       [200, 274)                       272                               73                18                           273
+        T25_EV5        406   406–407    V6E_MOM|cPROBSgrande       [200, 406)                       405                              204                18                           405
+            T30        380   380–381     V6_MOM|cPROBSgrande       [200, 380)                       379                              178                18                           379
+        T30_EV5        574   574–575    TUDO_INI_CALR|bisolo       [420, 574)                       573                              154                81                           573
+            T35        340   340–341    V6E_INI|cPROBSgrande       [200, 340)                       339                              138                18                           339
+            T35        692   692–693     V6E_INI|bipro35mais       [420, 692)                       691                              272                81                           691
+        T35_EV5        446   446–447    V6E_MOM|cPROBSgrande       [200, 446)                       445                              244                18                           445
+RESULTADO: FALHAS: A9 ensemble por minuto refeito do livro dos funis T10…T35 (FIRST = 1º minuto com aposta; MULTI = todos) == ensemble_minutos.csv
