@@ -2,7 +2,7 @@
 
 Escala: **VERIFICADO** (li o código e testei com prova) · **ALTA CONFIANÇA** (lógica entendida, sem teste de cada detalhe) · **INCERTO** · **NÃO SEI**.
 Todas as evidências empíricas são com **dados SINTÉTICOS**. Nenhum dado real foi rodado por mim.
-Estado: revisão adversarial independente EM ANDAMENTO quando este pacote foi gerado. Achados posteriores vão numa versão corrigida.
+Estado: revisão adversarial independente CONCLUÍDA (6 revisores + céticos); achados e correções na seção 6.
 
 ## 1. O que o script faz (pipeline)
 1. **Motor do usuário** (`backtest_sujo.py`, v9.0 no PC de produção). O script importa o motor e usa dele só a PREVISÃO: carga, `preparar`, features, candidatos, `blocos_teste`, `walk_forward_dev` e banco de previsões. As funções de AVALIAÇÃO são cópias literais da v9.0.1 dentro do script; o log confere, função por função, se as do motor são idênticas.
@@ -29,7 +29,7 @@ Estado: revisão adversarial independente EM ANDAMENTO quando este pacote foi ge
 - **CLV / markout.** Para cada aposta (jogo, minuto t, lado), com q = probabilidade sem margem e odd:
   - em t+h (h = 5…25): mk = q(t+h) − q(t), % a favor, "ROI markout" = odd·q(t+h) − 1 e green-up = odd/odd(t+h) − 1;
   - fechamento = última odd do jogo DEPOIS de t, nos minutos 10–35 e, se existirem, zz40/zz45 só como odds: CLV = odd·q_fech − 1; supera = q_fech > q(t);
-  - novas métricas de histórico (clv_medio, clv_taxa, n_clv) e regras (clv_medio, clv_taxa, clv_taxa_com_skill).
+  - novas métricas de histórico (clv_medio, clv_taxa, n_clv) e regras (clv_medio, clv_mk = média de q_fech − q, clv_mk_com_skill). A taxa de superação é só descritiva (ver seção 6).
 - **Modo sombra.** Quando a regra quer trocar, a produção fica congelada e a nova roda em sombra. Depois de N = 50 jogos executáveis, compara (só jogos < início do par − embargo) CLV médio ou Brier skill. Vence → promove; perde → a sombra recomeça.
 - **ROI × esperado:**
   - EV médio do modelo;
@@ -64,3 +64,21 @@ Estado: revisão adversarial independente EM ANDAMENTO quando este pacote foi ge
 - **Green-up usa a odd de back em t+h,** sem o spread de lay (otimista).
 - **Comparações de flags diferentes:** Brier skill de opções com flags diferentes é medido em linhas diferentes (cada flag tem o seu universo).
 - **Muitas regras × funis × janelas:** usar Reality Check/MCS. Os jogos são de desenvolvimento, já vistos em análises.
+
+## 6. Revisão adversarial (03/10) — achados e o que foi feito
+| achado | gravidade | verificado? | correção |
+|---|---|---|---|
+| "% que supera o fechamento" não tem 50% como referência (depende do preço; simulação martingale: q 0,15–0,30 → 37%) — as regras clv_taxa e o alarme favoreciam favoritos | ALTA | sim (cético 0,85) | decisão, sombra "clv" e alarme passam a usar o movimento médio q_fech − q (referência 0); a taxa fica só descritiva; regras clv_mk / clv_mk_com_skill |
+| % do tempo em alarme contava janelas incompletas como "sem alarme" | média | sim (0,95) | % só sobre pontos com janela cheia |
+| sombra: produção sem amostra nunca era comparada e nada registrava | média | sim (0,55) | evento "indeterminada" (1× por janela) e contagem por série |
+| tabela de EV sem diferença pareada | média | sim (0,70) | ev_comparacao_pareada.csv e Δ (z) no RESUMO |
+| fechamento in-play perto do resultado | média | parcialmente (0,6 / outro cético: não é defeito) | aviso no RESUMO e LEIA; horizontes fixos recomendados |
+| EV calibrado ignorava EMBARGO_ESCOLHA (só se > 0) | baixa | — | corte em início do par − embargo; A12 idem |
+| sabotagem interna não perturbava L2/N2 e contagens | info | — | agora perturba todos os canais |
+| green-up com a odd de back do mesmo lado (otimista) | baixa | — | green-up real: hedge no outro lado, na odd da casa: odd·(1 − 1/odd_outro) − 1 |
+| −2 (não apostar) virava "manter produção" na sombra | baixa | — | produção não aposta naquele par; A13 idem |
+| métricas novas sem corte por período (antigo lockbox) | baixa | — | colunas por período (n, ROI, EV, CLV, mk) |
+| SVG sem escape de texto | baixa | — | escape XML |
+| A13 é consistência, não prova de não-vazamento | baixa | — | rótulo corrigido (a prova é a sabotagem) |
+| jogos simultâneos na fronteira dos pares (embargo 0) | — | cético: premissa do usuário, não defeito | LEIA recomenda rodar também com EMBARGO_ESCOLHA = 2 |
+| EV calibrado com viés de seleção (winner's curse) nas regras | baixa | — | documentado: compare com BASE (opção fixa, sem esse viés) |

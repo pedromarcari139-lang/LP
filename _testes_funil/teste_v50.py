@@ -18,7 +18,7 @@ frames = {10: fr([(1, 1, 2.0, 0.48), (1, 2, 1.9, 0.52), (2, 1, 3.0, 0.32), (2, 2
 extras = {40: pd.DataFrame(dict(gameid=[1, 1], side=[1, 2], odd=[1.6, 2.4], q=[0.60, 0.40]))}
 VF.ODDS = VF.montar_odds(frames, extras)
 c = VF.clv_campos(np.array([1, 2, 3, 2]), np.array([1, 1, 1, 1]), np.array([10, 10, 10, 20]), np.array([2.0, 3.0, 2.5, 3.5]), np.array([0.48, 0.32, 0.40, 0.28]))
-ok("markout +5 jogo 1: mk = 0,52 − 0,48; ROI markout = 2·0,52 − 1; green-up = 2/1,8 − 1", np.allclose([c["mk5"][0], c["ev5"][0], c["gr5"][0]], [0.04, 0.04, 2 / 1.8 - 1]), f"{c['mk5'][0]:.4f} {c['ev5'][0]:.4f} {c['gr5'][0]:.4f}")
+ok("markout +5 jogo 1: mk = 0,52 − 0,48; ROI markout = 2·0,52 − 1; green-up REAL (hedge no outro lado, odd 2,1) = 2·(1 − 1/2,1) − 1", np.allclose([c["mk5"][0], c["ev5"][0], c["gr5"][0]], [0.04, 0.04, 2 * (1 - 1 / 2.1) - 1]), f"{c['mk5'][0]:.4f} {c['ev5'][0]:.4f} {c['gr5'][0]:.4f}")
 ok("markout +5 jogo 3 (sem minuto 15) = NaN; +10 = 0,44 − 0,40", np.isnan(c["mk5"][2]) and np.isclose(c["mk10"][2], 0.04))
 ok("fechamento jogo 1 = minuto 40 (só odds): q 0,60 → CLV = 2·0,60 − 1 = 0,20, supera", c["minuto_fech"][0] == 40 and np.isclose(c["clv"][0], 0.2) and c["supera"][0] == 1.0)
 ok("fechamento jogo 2 (aposta no 10) = minuto 20: q 0,28 → CLV = 3·0,28 − 1 = −0,16, NÃO supera; bruto: 3,0 < 3,5 → não", c["minuto_fech"][1] == 20 and np.isclose(c["clv"][1], -0.16) and c["supera"][1] == 0.0 and c["supera_bruto"][1] == 0.0)
@@ -42,6 +42,13 @@ ok("sombra: nova pior → rejeitada em 116 e a sombra RECOMEÇA (rejeita de novo
 fut = S.copy(); fut[1, 1 + 30:] += 999                                                     # futuro (jogos >= 130) adulterado
 prod3, _ = VF.sombra(idx, a, a, G, {"brier": (fut, N)}, "brier", 6, 3)
 ok("sombra: adulterar jogos >= 130 não muda a produção dos pares <= 130", np.array_equal(prod3[a <= 130], prod[a <= 130]))
+
+idx4 = idx.copy(); idx4[a == 120] = -2                                                     # a regra decide NÃO apostar no par 120
+prod4, _ = VF.sombra(idx4, a, a, G, AC, "brier", 6, 3)
+ok("sombra: par em que a regra decide não apostar (−2) → produção não aposta nesse par; o resto igual", prod4[a == 120][0] == -2 and np.array_equal(prod4[a != 120], prod[a != 120]))
+N5 = N.copy(); N5[0, 1 + 10:] = N5[0, 1 + 10]                                              # produção para de ter linhas a partir do jogo 110
+prod5, ev5 = VF.sombra(idx, a, a, G, {"brier": (S, N5)}, "brier", 6, 3)
+ok("sombra: produção sem amostra → NÃO decide e registra 'indeterminada' uma vez", (prod5 == 0).all() and [e["evento"] for e in ev5].count("indeterminada") == 1)
 
 # ---------------- 3. EV calibrado (só apostas ANTERIORES ao par, da mesma opção) ----------------
 VF.MIN_CALIB = 2

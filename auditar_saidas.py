@@ -246,9 +246,9 @@ if os.path.exists(fp_lv) and os.path.exists(fp_od) and "clv_fech" in pd.read_csv
           f"{len(LV)} apostas · {int(tem.sum())} com fechamento · horizontes {HZ}" + ("; " + "; ".join(e11) if e11 else ""))
     # A12: EV calibrado só com apostas de jogos ANTERIORES ao par
     MINC = int(cfg.get("min_calib", 30)); c_ok = LV.calib_ate_jogo >= 0
-    e12 = int((LV.calib_ate_jogo[c_ok] >= LV.par_a[c_ok]).sum()); e12b = int((np.abs(LV.ev_cal[LV.calib_n < MINC] - LV.ev[LV.calib_n < MINC]) > 1e-12).sum())
+    e12 = int((LV.calib_ate_jogo[c_ok] >= LV.par_a[c_ok] - EMB).sum());                        # REVISÃO: < início do par − EMBARGO_ESCOLHA e12b = int((np.abs(LV.ev_cal[LV.calib_n < MINC] - LV.ev[LV.calib_n < MINC]) > 1e-12).sum())
     e12c = int((np.abs(LV.ev - (LV.p * LV.odd - 1)) > 1e-9).sum())
-    checa("A12 EV calibrado: última aposta usada na calibração < início do par; sem histórico suficiente = EV do modelo; EV = p·odd − 1", e12 == 0 and e12b == 0 and e12c == 0,
+    checa("A12 EV calibrado: última aposta usada na calibração < início do par − embargo; sem histórico suficiente = EV do modelo; EV = p·odd − 1", e12 == 0 and e12b == 0 and e12c == 0,
           f"{int(c_ok.sum())} apostas com histórico de calibração · violações {e12}/{e12b}/{e12c}")
     # A15: limiar de EV e FIRST = no máximo 1 aposta por jogo
     e15 = []
@@ -288,10 +288,13 @@ if os.path.exists(fp_sb) and os.path.exists(fp_se) and os.path.getsize(fp_se) > 
             prod_par.append(prod)
         js = JC[(JC.funil == fu) & (JC.janela == jan) & (JC.conjunto == conj)].gameid.values; lj = LJ[LJ.funil == fu].set_index(["opcao", "gameid"]).lucro
         ini_a = tr.a.values; sg = np.searchsorted(ini_a, js, side="right") - 1
-        luc = np.array([lj.get((prod_par[i], g), 0.0) if (i >= 0 and prod_par[i] is not None) else 0.0 for g, i in zip(js, sg)])
+        nao = set(tr.a[tr.escolhida == "NAO_APOSTA"].values)                                   # REVISÃO: a regra decidiu não apostar → a produção não aposta no par
+        luc = np.array([lj.get((prod_par[i], g), 0.0) if (i >= 0 and prod_par[i] is not None and ini_a[i] not in nao) else 0.0 for g, i in zip(js, sg)])
         rep_ = SB[(SB.funil == fu) & (SB.janela == jan) & (SB.conjunto == conj) & (SB.regra == regra) & (SB.criterio == cr)].ppg
         if len(rep_) and abs(luc.mean() - float(rep_.iloc[0])) > 1e-9: e13.append(f"{fu}/{jan}/{conj}/{regra}/{cr}: PPG refeito {luc.mean():+.6f} ≠ {float(rep_.iloc[0]):+.6f}")
-    checa("A13 MODO SOMBRA refeito dos eventos: decisões só com >= N_SOMBRA jogos de sombra, sombra começa antes do par, promoção ⇔ métrica da sombra > produção; "
+    ind = SE[SE.evento == "indeterminada"]
+    if (ind.jogos_em_sombra < NS).any() or ((ind.amostra_sombra >= MA) & (ind.amostra_producao >= MA)).any(): e13.append("evento 'indeterminada' incoerente")
+    checa("A13 (CONSISTÊNCIA, não prova de não-vazamento — essa vem da sabotagem) MODO SOMBRA refeito dos eventos: decisões só com >= N_SOMBRA jogos de sombra, sombra começa antes do par, promoção ⇔ métrica da sombra > produção; "
           "produção por par refeita dos eventos dá o PPG do sombra.csv", not e13 and n13 > 0, f"{n13} séries · {len(pr)} promoções · {len(rj)} rejeições" + ("; " + "; ".join(e13[:5]) if e13 else ""))
 
 # ---------- A7: índices de decisões sorteadas ----------

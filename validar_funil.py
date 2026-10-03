@@ -80,15 +80,17 @@ METRICAS = {
     "cobertura_modelo": +1,                                                                   # fração dos jogos executáveis da janela em que o MODELO (sem flag) tem previsão
     "t_ppg": +1, "t_bsskill_todas": +1,                                                       # média ÷ erro-padrão (consistência; sem cluster — use como filtro, não como p-valor)
     "ppg_recente": +1, "bsskill_recente": +1, "queda_ppg": +1,                                # últimos JANELA_RECENTE jogos; queda_ppg = ppg_recente − ppg (negativo = piorando)
-    "clv_medio": +1, "clv_taxa": +1, "n_clv": +1,                                             # v5.0: CLV das apostas da janela (ver CLV abaixo): média de odd·q_fech − 1,
-}                                                                                             #       % de apostas que bateram o fechamento, nº de apostas com fechamento
+    "clv_medio": +1, "clv_mk": +1, "n_clv": +1,                                               # v5.0: CLV das apostas da janela: média de odd·q_fech − 1; média de
+}                                                                                             #       q_fech − q (movimento do mercado a favor, referência 0); nº com fechamento
 SENTIDO = dict(METRICAS)
 REGRAS = ["bsskill_todas", "llskill_todas", "brier_todas", "ll_todas", "bsskill_entradas", "llskill_entradas", "brier_entradas", "ll_entradas",
           "ppg", "lucro", "roi", "sharpe", "sortino", "calmar", "maxdd", "seq_ruim",               # as 16 regras simples de antes (uma por métrica)
-          "clv_medio", "clv_taxa",                                                                 # v5.0: CLV (fechamento) do histórico da opção
-          dict(nome="clv_taxa_com_skill", ordenar="clv_taxa", filtros=[("bsskill_todas", ">", 0.0)], sem_candidato="relaxar")]
-                                    # v5.0 (pedido: "métrica de decisão = taxa de superação do fechamento + ganho sobre a linha de base do mercado"):
-                                    # a maior taxa de superação do fechamento ENTRE as opções com Brier skill > 0 (melhor que o mercado); ninguém → sem o filtro
+          "clv_medio", "clv_mk",                                                                   # v5.0: CLV (fechamento) do histórico da opção
+          dict(nome="clv_mk_com_skill", ordenar="clv_mk", filtros=[("bsskill_todas", ">", 0.0)], sem_candidato="relaxar")]
+                                    # v5.0 (pedido: "métrica de decisão = superação do fechamento + ganho sobre a linha de base do mercado"): o maior movimento
+                                    # médio do mercado a favor até o fechamento (clv_mk) ENTRE as opções com Brier skill > 0; ninguém → sem o filtro.
+                                    # REVISÃO 03/10: a TAXA de superação (clv_taxa) NÃO tem 50% como referência — num mercado sem viés ela depende do preço
+                                    # (zebra ≈ 37%, favorito > 50%), então não decide nada; clv_mk = média de q_fech − q tem referência 0 para qualquer preço
 REGRAS_EXTRAS = [                                                                              # regras COMPOSTAS (vazio = só as simples). Exemplos:
     # dict(nome="brier_com_roi>=2%", ordenar="brier_todas", filtros=[("roi", ">=", 0.02)], sem_candidato="melhor_sem_filtro"),
     # dict(nome="bsskill_com_t_ppg>=1_e_100apostas", ordenar="bsskill_todas", filtros=[("t_ppg", ">=", 1.0), ("n_apostas", ">=", 100)], sem_candidato="relaxar"),
@@ -743,7 +745,7 @@ def dados_funil(G, GMf, apostas_de, opcoes, fu):
     Σ lucro² e Σ min(lucro, 0)² por aposta; e as apostas em ordem (gameid, minuto)."""
     nG, O = len(G), len(opcoes); mins = list(fu["minutos_criterio"])
     T = np.zeros((O, nG, 6)); E = np.zeros((O, nG, 5)); Lg = np.zeros((O, nG)); L2 = np.zeros((O, nG)); N2 = np.zeros((O, nG)); BETS = []; COV = np.zeros((O, nG))
-    CS = np.zeros((O, nG)); CN = np.zeros((O, nG)); CB = np.zeros((O, nG))                      # v5.0: CLV por jogo (soma, nº com fechamento, nº que bateu o fechamento)
+    CS = np.zeros((O, nG)); CN = np.zeros((O, nG)); CB = np.zeros((O, nG))                      # v5.0: CLV por jogo (soma de odd·q_fech − 1, nº com fechamento, soma de q_fech − q)
     for j, op in enumerate(opcoes):
         r = GMf[op["cand"]]; r = r[r["t"].isin(mins) & (r["gameid"] >= op["w"])]
         COV[j] = np.bincount(np.searchsorted(G, r["gameid"].values), minlength=nG) > 0                 # o modelo previu algum minuto deste jogo
@@ -758,8 +760,8 @@ def dados_funil(G, GMf, apostas_de, opcoes, fu):
         for k, v in enumerate([None, llm, llk, (p - y) ** 2, (q - y) ** 2]): E[j, :, k] = np.bincount(ib, weights=v, minlength=nG)
         Lg[j] = np.bincount(ib, weights=L, minlength=nG); L2[j] = np.bincount(ib, weights=L ** 2, minlength=nG); N2[j] = np.bincount(ib, weights=np.minimum(L, 0) ** 2, minlength=nG)
         cv = clv_campos(g_, sd_, t_, od_, q); tem = np.isfinite(cv["clv"])                     # v5.0: CLV (fechamento) de cada aposta
-        CS[j] = np.bincount(ib[tem], weights=cv["clv"][tem], minlength=nG); CN[j] = np.bincount(ib[tem], minlength=nG); CB[j] = np.bincount(ib[tem], weights=cv["supera"][tem], minlength=nG)
-        BETS.append(dict(g=g_.astype(np.int64), L=L.astype(float), p=p, y=y, q=q, t=t_, side=sd_, odd=od_, edge=ed_, clv=cv["clv"], supera=cv["supera"]))
+        CS[j] = np.bincount(ib[tem], weights=cv["clv"][tem], minlength=nG); CN[j] = np.bincount(ib[tem], minlength=nG); CB[j] = np.bincount(ib[tem], weights=cv["mk_fech"][tem], minlength=nG)
+        BETS.append(dict(g=g_.astype(np.int64), L=L.astype(float), p=p, y=y, q=q, t=t_, side=sd_, odd=od_, edge=ed_, clv=cv["clv"], supera=cv["supera"], mkf=cv["mk_fech"]))
     return dict(G=G, T=T, E=E, Lg=Lg, L2=L2, N2=N2, bets=BETS, COV=COV, CS=CS, CN=CN, CB=CB)
 
 
@@ -783,7 +785,7 @@ def _metricas(t, e, SL, SL2, SN2, nu, mdd, sq, SG2, SC=0.0, NC=0.0, BC=0.0):
         mu = (t[..., 4] - t[..., 3]) / np.maximum(nr, 1); sdr = np.sqrt(np.clip((t[..., 5] - nr * mu ** 2) / np.maximum(nr - 1, 1), 0, None))
         V["t_bsskill_todas"] = np.where(okr & (sdr > 0), mu / (sdr / np.sqrt(np.maximum(nr, 1))), np.nan)
         okc = np.asarray(NC) >= MIN_LINHAS                                                      # v5.0: CLV das apostas da janela (com fechamento)
-        V["clv_medio"] = np.where(okc, SC / np.maximum(NC, 1), np.nan); V["clv_taxa"] = np.where(okc, BC / np.maximum(NC, 1), np.nan); V["n_clv"] = np.asarray(NC, float) + 0.0
+        V["clv_medio"] = np.where(okc, SC / np.maximum(NC, 1), np.nan); V["clv_mk"] = np.where(okc, BC / np.maximum(NC, 1), np.nan); V["n_clv"] = np.asarray(NC, float) + 0.0
     return V
 
 
@@ -822,7 +824,7 @@ def valores_direto(B, D, j, a, w):
         e = np.array([len(L), np.sum(-(y * np.log(np.clip(p, 1e-6, 1)) + (1 - y) * np.log(np.clip(1 - p, 1e-6, 1)))), np.sum(-(y * np.log(q) + (1 - y) * np.log(1 - q))),
                       np.sum((p - y) ** 2), np.sum((q - y) ** 2)])
         lg = pd.Series(L).groupby(bt["g"][mb]).sum()                                                    # lucro por jogo, das apostas cruas
-        cl_, su_ = bt["clv"][mb], bt["supera"][mb]; tc = np.isfinite(cl_)                      # v5.0: CLV direto das apostas cruas
+        cl_, su_ = bt["clv"][mb], bt["mkf"][mb]; tc = np.isfinite(cl_)                         # v5.0: CLV direto das apostas cruas
         V = _metricas(D["T"][j][m].sum(0), e, L.sum(), (L ** 2).sum(), (np.minimum(L, 0) ** 2).sum(), int(m.sum()),
                       _maxdd(L) if len(L) else 0.0, _seq_ruim(L) if len(L) else 0, float((lg ** 2).sum()), float(cl_[tc].sum()), float(tc.sum()), float(su_[tc].sum()))
         if len(L) >= MIN_LINHAS: V["sharpe"] = (L.mean() / L.std(ddof=1)) if L.std(ddof=1) > 0 else np.nan   # motor: roi / sd (ddof=1)
@@ -1041,7 +1043,10 @@ def montar_odds(frames_sujo, extras):
     Q, O = Wq.values.astype(float), Wo.values.astype(float); v = np.isfinite(Q)
     ultimo = np.where(v.any(1), v.shape[1] - 1 - np.argmax(v[:, ::-1], axis=1), -1)
     lut = np.full(1000, -1, dtype=np.int64); lut[mins] = np.arange(len(mins))
-    return dict(idx=Wq.index, Q=Q, O=O, min=mins, lut=lut, ultimo=ultimo, longo=L.sort_values(["gameid", "side", "t"]).reset_index(drop=True))
+    gid_ = Wq.index.get_level_values(0).values; parceiro = np.full(len(gid_), -1, dtype=np.int64)   # linha do OUTRO lado do mesmo jogo (green-up com hedge)
+    ini_ = np.r_[0, np.flatnonzero(np.diff(gid_)) + 1]; fim_ = np.r_[ini_[1:], len(gid_)]
+    dois = (fim_ - ini_) == 2; parceiro[ini_[dois]] = ini_[dois] + 1; parceiro[ini_[dois] + 1] = ini_[dois]
+    return dict(idx=Wq.index, Q=Q, O=O, min=mins, lut=lut, ultimo=ultimo, parceiro=parceiro, longo=L.sort_values(["gameid", "side", "t"]).reset_index(drop=True))
 
 
 def clv_campos(g, side, t, odd, q):
@@ -1053,8 +1058,10 @@ def clv_campos(g, side, t, odd, q):
     ri = ODDS["idx"].get_indexer(pd.MultiIndex.from_arrays([np.asarray(g, np.int64), _lado(side)])); ok = ri >= 0; ri0 = np.maximum(ri, 0)
     for h in HORIZONTES_CLV:
         c = ODDS["lut"][np.clip(t + h, 0, len(ODDS["lut"]) - 1)]; m = ok & (c >= 0)
-        qh = np.full(n, np.nan); oh = np.full(n, np.nan); qh[m] = ODDS["Q"][ri0[m], c[m]]; oh[m] = ODDS["O"][ri0[m], c[m]]
-        out[f"q{h}"] = qh; out[f"mk{h}"] = qh - q; out[f"ev{h}"] = odd * qh - 1.0; out[f"gr{h}"] = odd / oh - 1.0
+        qh = np.full(n, np.nan); vh = np.full(n, np.nan); qh[m] = ODDS["Q"][ri0[m], c[m]]
+        pa_ = ODDS["parceiro"][ri0]; mp_ = m & (pa_ >= 0); vh[mp_] = ODDS["O"][pa_[mp_], c[mp_]]         # odd do OUTRO lado em t+h
+        out[f"q{h}"] = qh; out[f"mk{h}"] = qh - q; out[f"ev{h}"] = odd * qh - 1.0
+        out[f"gr{h}"] = odd * (1.0 - 1.0 / vh) - 1.0                                          # REVISÃO: green-up REAL (hedge apostando no outro lado na odd da casa)
     uc = np.where(ok, ODDS["ultimo"][ri0], -1); mc = np.where(uc >= 0, ODDS["min"][np.maximum(uc, 0)], -1); tem = ok & (uc >= 0) & (mc > t)
     qc = np.full(n, np.nan); oc = np.full(n, np.nan); qc[tem] = ODDS["Q"][ri0[tem], uc[tem]]; oc[tem] = ODDS["O"][ri0[tem], uc[tem]]
     out.update(q_fech=qc, odd_fech=oc, minuto_fech=np.where(tem, mc, -1), clv=odd * qc - 1.0, mk_fech=qc - q,
@@ -1096,7 +1103,7 @@ def apostas_serie(D, ks, js, a_par, cal):
         if not m.any(): continue
         d = {c: np.asarray(bt[c])[m] for c in cols}; d["k"] = np.full(int(m.sum()), k); d["a_par"] = a_par[np.searchsorted(js, d["g"])]
         if k not in cal: cal[k] = calibrador_ev(bt)
-        c_ = cal[k]; i_ = np.searchsorted(c_["g"], d["a_par"], side="left")                  # apostas da opção com jogo < a_par
+        c_ = cal[k]; i_ = np.searchsorted(c_["g"], d["a_par"] - int(EMBARGO_ESCOLHA), side="left")   # apostas da opção com jogo < a_par − EMBARGO
         ev = d["p"] * d["odd"] - 1.0; fx = np.clip(np.searchsorted(BINS_EV, ev, side="right") - 1, 0, len(BINS_EV) - 2)
         nL, nN = c_["L"][fx, i_], c_["N"][fx, i_]
         d["ev"] = ev; d["calib_n"] = nN; d["ev_cal"] = np.where(nN >= MIN_CALIB, nL / np.maximum(nN, 1), ev)
@@ -1159,19 +1166,19 @@ def stats_apostas(A, tag):
 def acumulados_sombra(D):
     """somas acumuladas POR JOGO (posição em G) de cada opção: Brier skill das linhas 'todas' e CLV das apostas (com fechamento)"""
     cs = lambda x: np.concatenate([np.zeros((x.shape[0], 1)), np.cumsum(x, axis=1)], axis=1)
-    return dict(brier=(cs(D["T"][:, :, 4] - D["T"][:, :, 3]), cs(D["T"][:, :, 0])), clv=(cs(D["CS"]), cs(D["CN"])))
+    return dict(brier=(cs(D["T"][:, :, 4] - D["T"][:, :, 3]), cs(D["T"][:, :, 0])), clv=(cs(D["CB"]), cs(D["CN"])))   # clv = média de q_fech − q (ref. 0)
 
 
 def sombra(idx_pares, a_pares, fim_pares, G, AC, crit, n_sombra, min_amostra):
     """produção de cada par com o MODO SOMBRA sobre as escolhas da regra (idx_pares, uma por par, na ordem). Só usa jogos < início do par.
     Devolve a opção de produção por par e os eventos (início de sombra, promoção, rejeição)."""
-    S, N = AC[crit]; prod = -1; cand = -1; s0 = None; out = np.full(len(a_pares), -1, dtype=np.int64); ev = []
+    S, N = AC[crit]; prod = -1; cand = -1; s0 = None; out = np.full(len(a_pares), -1, dtype=np.int64); ev = []; avisou = False
     for i, (a, fim, r) in enumerate(zip(a_pares, fim_pares, idx_pares)):                # fim = início do par − EMBARGO_ESCOLHA (fim exclusivo do histórico)
         if prod < 0:
             if r >= 0: prod = r; ev.append(dict(a=int(a), evento="inicio_producao", producao=int(r)))
         elif r >= 0 and r != prod:
             if cand != r:
-                cand, s0 = r, int(a); ev.append(dict(a=int(a), evento="inicio_sombra", producao=int(prod), sombra=int(r), sombra_desde=s0))
+                cand, s0, avisou = r, int(a), False; ev.append(dict(a=int(a), evento="inicio_sombra", producao=int(prod), sombra=int(r), sombra_desde=s0))
             else:
                 lo, hi = np.searchsorted(G, s0, "left"), np.searchsorted(G, fim, "left")
                 if hi - lo >= n_sombra:
@@ -1181,9 +1188,12 @@ def sombra(idx_pares, a_pares, fim_pares, G, AC, crit, n_sombra, min_amostra):
                         e_ = dict(a=int(a), producao=int(prod), sombra=int(cand), sombra_desde=s0, jogos_em_sombra=int(hi - lo), metrica_sombra=float(mc), metrica_producao=float(mp),
                                   amostra_sombra=float(nc_), amostra_producao=float(np_))
                         if mc > mp: ev.append(dict(e_, evento="promovida")); prod, cand = cand, -1
-                        else: ev.append(dict(e_, evento="rejeitada")); s0 = int(a)
+                        else: ev.append(dict(e_, evento="rejeitada")); s0, avisou = int(a), False
+                    elif not avisou:                                                            # REVISÃO: amostra insuficiente → registra (1× por janela)
+                        ev.append(dict(a=int(a), evento="indeterminada", producao=int(prod), sombra=int(cand), sombra_desde=s0, jogos_em_sombra=int(hi - lo),
+                                       amostra_sombra=float(nc_), amostra_producao=float(np_))); avisou = True
         elif r == prod: cand = -1
-        out[i] = prod
+        out[i] = -2 if (r == -2 and prod >= 0) else prod                                        # REVISÃO: a regra decidiu não apostar → produção não aposta neste par
     return out, ev
 
 
@@ -1208,6 +1218,7 @@ def rolling_janela(x, num, den, W):
 
 
 def _svg_painel(series, titulo, w=1140, h=230, y0=None):
+    from xml.sax.saxutils import escape as esc
     """um painel SVG simples (sem matplotlib): linhas {nome: (x, y)}"""
     cores = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#8c564b", "#7f7f7f"]
     xs = np.concatenate([np.asarray(x, float) for x, _ in series.values()]) if series else np.array([0, 1.0])
@@ -1218,7 +1229,7 @@ def _svg_painel(series, titulo, w=1140, h=230, y0=None):
     if x1 <= x0: x1 = x0 + 1
     if yb <= ya: yb = ya + 1
     L_, R_, T_, B_ = 60, 330, 22, 24; fx = lambda v: L_ + (v - x0) / (x1 - x0) * (w - L_ - R_); fy = lambda v: T_ + (yb - v) / (yb - ya) * (h - T_ - B_)
-    out = [f'<g><text x="{L_}" y="15" font-size="13" font-family="sans-serif">{titulo}</text>',
+    out = [f'<g><text x="{L_}" y="15" font-size="13" font-family="sans-serif">{esc(titulo)}</text>',
            f'<rect x="{L_}" y="{T_}" width="{w - L_ - R_}" height="{h - T_ - B_}" fill="none" stroke="#999"/>']
     for v in (ya, yb) + ((y0,) if y0 is not None else ()):
         out.append(f'<text x="{L_ - 4}" y="{fy(v) + 4:.1f}" font-size="10" text-anchor="end" font-family="sans-serif">{v:.3g}</text>')
@@ -1227,7 +1238,7 @@ def _svg_painel(series, titulo, w=1140, h=230, y0=None):
         x, y = np.asarray(x, float), np.asarray(y, float); ok = np.isfinite(y)
         passo = max(1, int(ok.sum() // 1500)); pts = " ".join(f"{fx(a):.1f},{fy(b):.1f}" for a, b in list(zip(x[ok], y[ok]))[::passo])
         out.append(f'<polyline fill="none" stroke="{cores[i % len(cores)]}" stroke-width="1.3" points="{pts}"/>')
-        out.append(f'<text x="{w - R_ + 6}" y="{T_ + 12 + 13 * i}" font-size="10" fill="{cores[i % len(cores)]}" font-family="sans-serif">{nm[:58]}</text>')
+        out.append(f'<text x="{w - R_ + 6}" y="{T_ + 12 + 13 * i}" font-size="10" fill="{cores[i % len(cores)]}" font-family="sans-serif">{esc(nm[:58])}</text>')
     out.append(f'<text x="{L_}" y="{h - 6}" font-size="10" font-family="sans-serif">{x0:.0f}</text><text x="{w - R_}" y="{h - 6}" font-size="10" text-anchor="end" font-family="sans-serif">{x1:.0f}</text></g>')
     return out, h
 
@@ -1237,7 +1248,7 @@ def gravar_svg(arq, paineis, titulo):
     for (series, tit, y0) in paineis:
         p_, h_ = _svg_painel(series, tit, y0=y0); corpo.append(f'<g transform="translate(0,{y})">' + "".join(p_) + "</g>"); y += h_ + 10
     open(arq, "w", encoding="utf-8").write(f'<svg xmlns="http://www.w3.org/2000/svg" width="1140" height="{y + 10}" style="background:#fff">'
-                                           f'<text x="10" y="18" font-size="14" font-weight="bold" font-family="sans-serif">{titulo}</text>' + "".join(corpo) + "</svg>")
+                                           f'<text x="10" y="18" font-size="14" font-weight="bold" font-family="sans-serif">{__import__("xml.sax.saxutils", fromlist=["escape"]).escape(titulo)}</text>' + "".join(corpo) + "</svg>")
 
 
 # ---------------------------------------------------------------- processos ----------------------------------------------------------------
@@ -1491,12 +1502,14 @@ def main():
                 a_s = a_all[d]; fut = G >= a_hist[d]; nf = int(fut.sum())
                 D2 = dict(D, T=D["T"].copy(), E=D["E"].copy(), Lg=D["Lg"].copy(), L2=D["L2"].copy(), N2=D["N2"].copy(), COV=D["COV"].copy(), bets=[dict(b) for b in D["bets"]],
                           CS=D["CS"].copy(), CN=D["CN"].copy(), CB=D["CB"].copy())
-                D2["CS"][:, fut] = rng.normal(0, 5, size=(len(opcoes), nf)); D2["CN"][:, fut] = rng.integers(0, 4, size=(len(opcoes), nf)); D2["CB"][:, fut] = rng.integers(0, 4, size=(len(opcoes), nf))
+                D2["CS"][:, fut] = rng.normal(0, 5, size=(len(opcoes), nf)); D2["CN"][:, fut] = rng.integers(0, 4, size=(len(opcoes), nf)); D2["CB"][:, fut] = rng.normal(0, 5, size=(len(opcoes), nf))
+                D2["L2"][:, fut] = rng.random((len(opcoes), nf)) * 9; D2["N2"][:, fut] = rng.random((len(opcoes), nf)) * 9     # REVISÃO: todos os canais
+                D2["T"][:, fut, 0] = rng.integers(0, 9, size=(len(opcoes), nf)); D2["E"][:, fut, 0] = rng.integers(0, 9, size=(len(opcoes), nf))
                 D2["T"][:, fut, 1:] = rng.normal(0, 5, size=D2["T"][:, fut, 1:].shape); D2["E"][:, fut, 1:] = rng.normal(0, 5, size=D2["E"][:, fut, 1:].shape)
                 D2["Lg"][:, fut] = rng.normal(0, 5, size=(len(opcoes), nf)); D2["COV"][:, fut] = rng.random((len(opcoes), nf)) < 0.5
                 for b in D2["bets"]:
                     mf = b["g"] >= a_hist[d]; b["L"] = b["L"].copy(); b["L"][mf] = rng.normal(0, 5, size=int(mf.sum()))
-                    b["clv"] = b["clv"].copy(); b["clv"][mf] = rng.normal(0, 5, size=int(mf.sum())); b["supera"] = b["supera"].copy(); b["supera"][mf] = rng.integers(0, 2, size=int(mf.sum()))
+                    b["clv"] = b["clv"].copy(); b["clv"][mf] = rng.normal(0, 5, size=int(mf.sum())); b["mkf"] = b["mkf"].copy(); b["mkf"][mf] = rng.normal(0, 5, size=int(mf.sum()))
                 M2 = matriz_metricas(D2, opcoes, a_hist, Wd); ate = a_all <= a_s
                 AC2 = acumulados_sombra(D2) if AC is not None else None; ate2 = a2s <= a_s
                 for r in regras:
@@ -1583,6 +1596,12 @@ def main():
                     ks_ = esc_g[gi] if esc_g is not None else np.full(len(gi), ref_j[rn])
                     A_ = apostas_serie(D, ks_, js, a_par_js, cal); sa_, hz_ = stats_apostas(A_, f"{tag}|{rn}|{cad}")
                     extra.update(sa_); clv_rows.extend(dict(funil=fu["nome"], janela=jan, conjunto=conj, regra=rn, cadencia=cad, **h_) for h_ in hz_)
+                    if A_ is not None:                                                          # REVISÃO: métricas novas também POR PERÍODO (inclui o antigo lockbox)
+                        for (pn, pa, pb) in PX:
+                            mp_ = (A_["g"] >= pa) & (A_["g"] < pb); tc_ = mp_ & np.isfinite(A_["clv"])
+                            extra.update({f"n_apostas_{pn}": int(mp_.sum()), f"roi_apostas_{pn}": float(A_["L"][mp_].mean()) if mp_.any() else np.nan,
+                                          f"ev_medio_{pn}": float(A_["ev"][mp_].mean()) if mp_.any() else np.nan, f"clv_fech_{pn}": float(A_["clv"][tc_].mean()) if tc_.any() else np.nan,
+                                          f"mk_fech_{pn}": float(A_["mk_fech"][tc_].mean()) if tc_.any() else np.nan})
                     if esc_g is not None or rn.startswith("BASE_"): MON[rn] = (lc, nc, A_, ks_)
                     if esc_g is not None and (jan, conj) in SALVAR_APOSTAS and A_ is not None:  # LIVRO DE APOSTAS do procedimento desta regra
                         livro.append(pd.DataFrame(dict(funil=fu["nome"], janela=jan, conjunto=conj, regra=rn, par_a=A_["a_par"], gameid=A_["g"], t=A_["t"], side=A_["side"],
@@ -1648,6 +1667,8 @@ def main():
                                         z=m_ / se_ if se_ and se_ > 0 else np.nan, trocas_producao=int((ks_s[1:] != ks_s[:-1]).sum()),
                                         trocas_sem_sombra=int((series[(rn, cad2)][2][gi][1:] != series[(rn, cad2)][2][gi][:-1]).sum()),
                                         promocoes=sum(e["evento"] == "promovida" for e in evs), rejeicoes=sum(e["evento"] == "rejeitada" for e in evs),
+                                        indeterminadas=sum(e["evento"] == "indeterminada" for e in evs),
+                                        pct_pares_na_1a_escolha=float(np.mean(prod_p[prod_p >= 0] == prod_p[prod_p >= 0][0])) if (prod_p >= 0).any() else np.nan,
                                         maxdd=rk_s.get("maxdd"), roi=sa_s.get("roi_apostas"), clv_fech_medio=sa_s.get("clv_fech_medio"), supera_fech_taxa=sa_s.get("supera_fech_taxa"),
                                         n_apostas=sa_s.get("n_apostas_serie")))
                 if (jan, conj) in SALVAR_APOSTAS:
@@ -1662,19 +1683,20 @@ def main():
                 roi1, roi2 = rolling_janela(x_t, L_g, n_g, W1), rolling_janela(x_t, L_g, n_g, W2)
                 okk = ks_ >= 0; ksg = np.maximum(ks_, 0)
                 sk_g = np.where(okk, D["T"][ksg, gi, 4] - D["T"][ksg, gi, 3], 0.0); nl_g = np.where(okk, D["T"][ksg, gi, 0], 0.0); bss1 = rolling_janela(x_t, sk_g, nl_g, W1)
-                cs_g, cn_g, cb_g = np.zeros(len(js)), np.zeros(len(js)), np.zeros(len(js))
+                cs_g, cn_g, cb_g, cm_g = np.zeros(len(js)), np.zeros(len(js)), np.zeros(len(js)), np.zeros(len(js))
                 if A_ is not None:
                     tm = np.isfinite(A_["clv"]); gp = np.searchsorted(js, A_["g"][tm])
-                    cs_g, cn_g, cb_g = (np.bincount(gp, weights=w_, minlength=len(js)) for w_ in (A_["clv"][tm], np.ones(int(tm.sum())), A_["supera"][tm]))
-                sup1, clv1 = rolling_janela(x_t, cb_g, cn_g, W1), rolling_janela(x_t, cs_g, cn_g, W1)
+                    cs_g, cn_g, cb_g, cm_g = (np.bincount(gp, weights=w_, minlength=len(js)) for w_ in (A_["clv"][tm], np.ones(int(tm.sum())), A_["supera"][tm], A_["mk_fech"][tm]))
+                sup1, clv1, mk1 = rolling_janela(x_t, cb_g, cn_g, W1), rolling_janela(x_t, cs_g, cn_g, W1), rolling_janela(x_t, cm_g, cn_g, W1)
+                pct_ = lambda v, f: float(np.mean(f(v[np.isfinite(v)]))) if np.isfinite(v).any() else np.nan     # REVISÃO: só pontos com janela cheia
                 ult = lambda v: float(v[np.isfinite(v)][-1]) if np.isfinite(v).any() else np.nan
                 monitor_rows.append(dict(funil=fu["nome"], janela=jan, conjunto=conj, regra=rn_, unidade_janela=unid, janela_curta=W1, janela_longa=W2,
-                                         roi_curta_atual=ult(roi1), roi_longa_atual=ult(roi2), supera_fech_curta_atual=ult(sup1), clv_curta_atual=ult(clv1), bsskill_curta_atual=ult(bss1),
-                                         roi_curta_min=float(np.nanmin(roi1)) if np.isfinite(roi1).any() else np.nan, pct_tempo_roi_curta_negativo=float(np.nanmean(roi1 < 0)) if np.isfinite(roi1).any() else np.nan,
-                                         pct_tempo_supera_curta_abaixo_50=float(np.nanmean(sup1 < 0.5)) if np.isfinite(sup1).any() else np.nan,
-                                         pct_tempo_bsskill_curta_negativo=float(np.nanmean(bss1 < 0)) if np.isfinite(bss1).any() else np.nan,
+                                         roi_curta_atual=ult(roi1), roi_longa_atual=ult(roi2), supera_fech_curta_atual=ult(sup1), clv_curta_atual=ult(clv1), mk_fech_curta_atual=ult(mk1),
+                                         bsskill_curta_atual=ult(bss1), roi_curta_min=float(np.nanmin(roi1)) if np.isfinite(roi1).any() else np.nan,
+                                         pct_tempo_roi_curta_negativo=pct_(roi1, lambda v: v < 0), pct_tempo_mk_fech_curta_negativo=pct_(mk1, lambda v: v < 0),
+                                         pct_tempo_bsskill_curta_negativo=pct_(bss1, lambda v: v < 0),
                                          drawdown_atual=float(dd[-1]) if len(dd) else np.nan, maxdd=float(-dd.min()) if len(dd) else np.nan,
-                                         ALARME_ROI=bool(ult(roi1) < 0), ALARME_CLV=bool(ult(sup1) < 0.5), ALARME_BRIER=bool(ult(bss1) < 0)))
+                                         ALARME_ROI=bool(ult(roi1) < 0), ALARME_CLV=bool(ult(mk1) < 0), ALARME_BRIER=bool(ult(bss1) < 0)))
                 if rn_ in top_ or rn_.startswith("BASE_"):
                     graf_full[rn_] = (x_t, cum, dd, roi1); ult_ = x_t >= x_t[-1] - W2 if len(x_t) else x_t > 0
                     graf_ult[rn_] = (x_t[ult_], cum[ult_] - (cum[ult_][0] - L_g[ult_][0] if ult_.any() else 0), roi1[ult_])
@@ -1718,6 +1740,16 @@ def main():
                                    "jogos_no_par", "lucro_no_par", "apostas_no_par"]).to_csv(os.path.join(OUT, "trilhas.csv.gz"), index=False)
     pd.DataFrame(opcoes).to_csv(os.path.join(OUT, "opcoes.csv"), index=False)
     CLV_T = pd.DataFrame(clv_rows); CLV_T.to_csv(os.path.join(OUT, "clv_markout.csv"), index=False)                 # v5.0
+    evc = []                                                                                    # REVISÃO: EV5/EV10 − EV0 PAREADO (mesmos jogos), z por cluster de 10 gameids
+    for f0 in [f for f in FUNIS + FUNIS_MIN if f.get("ev_min") is None]:
+        for f1 in [f for f in FUNIS + FUNIS_MIN if f.get("ev_min") is not None and f["politica"] == f0["politica"] and f.get("minuto") == f0.get("minuto")
+                   and f["tempos"] == f0["tempos"]]:
+            for (fn, jan, conj, rn), s0_ in SER.items():
+                if fn != f0["nome"] or (f1["nome"], jan, conj, rn) not in SER: continue
+                s1_ = SER[(f1["nome"], jan, conj, rn)].reindex(s0_.index).fillna(0.0); m_, se_ = _media_se(s1_ - s0_)
+                evc.append(dict(funil_ev0=f0["nome"], funil_ev=f1["nome"], limiar_ev=f1["ev_min"], janela=jan, conjunto=conj, regra=rn, n_jogos=len(s0_),
+                                ppg_ev0=float(s0_.mean()), ppg_ev=float(s1_.mean()), delta=m_, se=se_, z=m_ / se_ if se_ and se_ > 0 else np.nan))
+    EVC = pd.DataFrame(evc); EVC.to_csv(os.path.join(OUT, "ev_comparacao_pareada.csv"), index=False)
     SB = pd.DataFrame(sombra_rows); SB.to_csv(os.path.join(OUT, "sombra.csv"), index=False)
     pd.DataFrame(sombra_ev).to_csv(os.path.join(OUT, "sombra_eventos.csv.gz"), index=False)
     MO = pd.DataFrame(monitor_rows); MO.to_csv(os.path.join(OUT, "monitor_alarmes.csv"), index=False)
@@ -1744,7 +1776,7 @@ def main():
         EN, LVE = ensemble_minutos(G, ESC, BETS_MIN, JSM, SER, nomes, nomes_r, PX)
         EN.to_csv(os.path.join(OUT, "ensemble_minutos.csv"), index=False)
         if len(LVE): LVE.to_csv(os.path.join(OUT, "apostas_ensemble.csv.gz"), index=False)
-    escrever_resumo(R, PR, MC, MT, P, CP, pd.DataFrame(dist_rows), pd.DataFrame(momini), dict(SB=SB, MO=MO, CLV=CLV_T, odds_min=list(ODDS["min"]), datas=DATAS is not None, PX=PX, regime=REGIME_DRAFT, C=C_FIXO, hist_ini=hist_ini, ini_draft=ini_draft, flag_ini=flag_ini, n_opcoes=len(opcoes), n_G=len(G), t0=t0, regras=nomes_r), EN)
+    escrever_resumo(R, PR, MC, MT, P, CP, pd.DataFrame(dist_rows), pd.DataFrame(momini), dict(SB=SB, MO=MO, CLV=CLV_T, EVC=EVC, odds_min=list(ODDS["min"]), datas=DATAS is not None, PX=PX, regime=REGIME_DRAFT, C=C_FIXO, hist_ini=hist_ini, ini_draft=ini_draft, flag_ini=flag_ini, n_opcoes=len(opcoes), n_G=len(G), t0=t0, regras=nomes_r), EN)
     json.dump(dict(regime=REGIME_DRAFT, motor_info={tag: K["motor_info"] for tag, (B, K) in M.items()}, motores={tag: hashlib.sha256(open(os.path.join(AQUI, ARQ_SUJO if tag == "sujo" else ARQ_LIMPO), "rb").read()).hexdigest() for tag in M},
                    script_sha256=hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest(), C_FIXO=C_FIXO, PASSO=PASSO, PASSO_ESCOLHA=PASSO_ESCOLHA,
                    tempos=KS["todos"], min_treino=KS["min_nov"], lockbox_serio=L0, hist_inicio=hist_ini, inicio_opcoes_draft=ini_draft, embargo_escolha=EMBARGO_ESCOLHA, flag_inicio=flag_ini, min_hist=min_hist, conjuntos=list(CONJUNTOS), n_acaso=N_ACASO,
@@ -1837,7 +1869,7 @@ def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info, EN=None):
                                     for _, c_ in f3(CP)[(f3(CP).regra_1 == a.regra) & (f3(CP).regra_2 == b_)].iterrows())
                        + f" · Brier skill das escolhidas {f_(a.get('bsskill_escolhida'), '+.5f')} · {a.mais_escolhidas}"
                        + f" · ROI apostas {f_(a.get('roi_apostas'), '+.3f')} [{f_(a.get('roi_ic_lo'), '+.3f')}; {f_(a.get('roi_ic_hi'), '+.3f')}] × esperado {f_(a.get('ev_medio_modelo'), '+.3f')} (calibrado {f_(a.get('ev_medio_calibrado'), '+.3f')})"
-                       + f" · CLV {f_(a.get('clv_fech_medio'), '+.3f')} supera {f_(a.get('supera_fech_taxa'), '.0%')} (n={f_(a.get('n_com_fechamento'), '.0f')}) · dp aposta real/esperado {f_(a.get('dp_lucro_aposta'), '.2f')}/{f_(a.get('dp_esperado_modelo'), '.2f')}")
+                       + f" [sem histórico p/ calibrar {f_(a.get('pct_ev_cal_sem_historico'), '.0%')}] · CLV {f_(a.get('clv_fech_medio'), '+.3f')} mk_fech {f_(a.get('mk_fech_medio'), '+.4f')} supera {f_(a.get('supera_fech_taxa'), '.0%')} (n={f_(a.get('n_com_fechamento'), '.0f')}) · dp aposta real/esperado {f_(a.get('dp_lucro_aposta'), '.2f')}/{f_(a.get('dp_esperado_modelo'), '.2f')}")
         fixos = r[(r.cadencia == "-") & r.regra.str.startswith("FIXO_") & ~r.regra.str.startswith("FIXO_RETRO")].sort_values("ppg", ascending=False)
         if len(fixos):
             txt.append(f"   [ref] MODELOS FIXOS sem flag ({len(fixos)}; PPG · Brier skill · percentil no acaso): "
@@ -1887,7 +1919,8 @@ def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info, EN=None):
     # ---------------- v5.0: LIMIAR DE EV, CLV/MARKOUT, SOMBRA, MONITOR ----------------
     pol_ev = [(f["politica"], f.get("ev_min"), f["nome"]) for f in FUNIS]
     if len({e for _, e, _ in pol_ev}) > 1:
-        txt.append("LIMIAR DE EV (mesmas regras, mesmos jogos; só muda a regra de ENTRADA: EV>0 = hoje · EV>5% · EV>10%) — PPG / ROI das apostas / nº de apostas:")
+        txt.append("LIMIAR DE EV (mesmas regras, mesmos jogos; só muda a regra de ENTRADA: EV>0 = hoje · EV>5% · EV>10%) — PPG / ROI das apostas / nº de apostas · "
+                   "Δ PPG contra EV>0 PAREADO nos mesmos jogos (z por cluster). ATENÇÃO: escolher o limiar por esta tabela é seleção nos mesmos dados:")
         for pol in [f["politica"] for f in FUNIS_BASE]:
             nm_ = [(e, n_) for p_, e, n_ in pol_ev if p_ == pol]
             for (jan, cj), _x in R[R.funil == nm_[0][1]].groupby(["janela", "conjunto"], sort=False):
@@ -1897,12 +1930,18 @@ def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info, EN=None):
                     for e, n_ in nm_:
                         x = R[(R.funil == n_) & (R.janela == jan) & (R.conjunto == cj) & (R.regra == rn) & (R.cadencia.isin([cad2, "-"]))]
                         cel.append(f"{f_(x.ppg.iloc[0], '+.4f')} / {f_(x.get('roi_apostas', pd.Series([np.nan])).iloc[0], '+.3f')} / {f_(x.get('n_apostas_serie', pd.Series([np.nan])).iloc[0], '.0f')}" if len(x) else "n/d")
-                    txt.append(f"   {rn.split(' ')[0]:<26} " + " | ".join(f"{c_:>26}" for c_ in cel))
+                    EVC_ = info.get("EVC"); dz = ""
+                    if EVC_ is not None and len(EVC_):
+                        y_ = EVC_[(EVC_.funil_ev0 == nm_[0][1]) & (EVC_.janela == jan) & (EVC_.conjunto == cj) & (EVC_.regra == (rn if not rn.startswith("BASE_") else "BASE"))]
+                        dz = " · " + " ".join(f"Δ{x_.funil_ev.split('_')[-1]} {f_(x_.delta, '+.4f')} (z {f_(x_.z, '+.1f')})" for _, x_ in y_.iterrows())
+                    txt.append(f"   {rn.split(' ')[0]:<26} " + " | ".join(f"{c_:>26}" for c_ in cel) + dz)
         txt.append("")
     CLV = info.get("CLV")
     if CLV is not None and len(CLV):
         txt.append("CLV / MARKOUT do lado apostado (regra de entrada de hoje; janela própria, todas as opções; as 5 regras de maior PPG + BASE). mk = q(t+h) − q(t) (q sem margem; + = o mercado "
-                   "veio para o lado da aposta) · a favor = % mk > 0 · ROI markout = odd(t)·q(t+h) − 1 · fechamento = última odd do jogo depois da aposta · perdidas = sem odd em t+h (jogo acabou):")
+                   "veio para o lado da aposta; num mercado sem viés a média é 0) · a favor = % mk > 0 (NÃO compare com 50%: depende do preço — zebra fica abaixo de 50% mesmo sem viés) · "
+                   "ROI markout = odd(t)·q(t+h) − 1 · fechamento = última odd do jogo depois da aposta (ao vivo isso fica PERTO DO RESULTADO e o horizonte depende da duração do "
+                   "jogo: CLV de fechamento acompanha o lucro; os horizontes fixos +5/+10 são o sinal menos ruidoso) · perdidas = sem odd em t+h (minuto não existe nos dados ou jogo acabou):")
         for f0 in [f["nome"] for f in FUNIS if f.get("ev_min") is None]:
             rr = R[(R.funil == f0) & (R.janela == "propria") & (R.conjunto == "todas") & (R.cadencia == cad2)].sort_values("ppg", ascending=False).head(5).regra.tolist() + [f"BASE_{BASELINE_MODELO} (fixo, sem flag)"]
             txt.append(f"=== {f0}")
@@ -1915,23 +1954,25 @@ def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info, EN=None):
         txt.append("")
     SB = info.get("SB")
     if SB is not None and len(SB):
-        txt.append(f"MODO SOMBRA (troca só depois de {N_SOMBRA} jogos em sombra vencendo a produção congelada; critério clv = CLV médio, brier = Brier skill) — PPG com sombra × sem sombra (Δ, z) · trocas · promoções/rejeições:")
+        txt.append(f"MODO SOMBRA (troca só depois de {N_SOMBRA} jogos em sombra vencendo a produção congelada; critério clv = movimento médio do mercado até o fechamento (q_fech − q), "
+                   f"brier = Brier skill) — PPG com sombra × sem sombra (Δ, z) · trocas · promoções/rejeições/indeterminadas (sem amostra) · % dos pares ainda na 1ª escolha:")
         for (f0, jan, cj), x in SB[SB.funil.isin([f["nome"] for f in FUNIS if f.get("ev_min") is None])].groupby(["funil", "janela", "conjunto"], sort=False):
             txt.append(f"=== {f0} · janela {jan} · opções {cj}")
             for rn, y in x.groupby("regra", sort=False):
-                txt.append(f"   {rn:<26} sem sombra {f_(y.ppg_sem_sombra.iloc[0])} · " + " · ".join(f"{c.criterio}: {f_(c.ppg)} (Δ {f_(c.delta_vs_sem_sombra, '+.4f')}, z {f_(c.z, '+.1f')}) trocas {int(c.trocas_producao)}/{int(c.trocas_sem_sombra)} prom {int(c.promocoes)} rej {int(c.rejeicoes)}" for _, c in y.iterrows()))
+                txt.append(f"   {rn:<26} sem sombra {f_(y.ppg_sem_sombra.iloc[0])} · " + " · ".join(f"{c.criterio}: {f_(c.ppg)} (Δ {f_(c.delta_vs_sem_sombra, '+.4f')}, z {f_(c.z, '+.1f')}) trocas {int(c.trocas_producao)}/{int(c.trocas_sem_sombra)} prom {int(c.promocoes)} rej {int(c.rejeicoes)} indet {int(c.indeterminadas)} 1ª {f_(c.pct_pares_na_1a_escolha, '.0%')}" for _, c in y.iterrows()))
         txt.append("   (EV5/EV10 e eventos de cada troca → sombra.csv / sombra_eventos.csv.gz)")
         txt.append("")
     MO = info.get("MO")
     if MO is not None and len(MO):
-        txt.append("MONITOR (para alarme, NÃO para decidir): ROI / CLV / Brier skill rolantes na janela curta, no FIM do período, e % do tempo em alarme (regra de entrada de hoje; janela própria, todas):")
+        txt.append("MONITOR (para alarme, NÃO para decidir): ROI / movimento do mercado até o fechamento (mk_fech) / Brier skill rolantes na janela curta, no FIM do período, e % do tempo "
+                   "(só com a janela cheia) em alarme — regra de entrada de hoje; janela própria, todas:")
         for f0 in [f["nome"] for f in FUNIS if f.get("ev_min") is None]:
             x = MO[(MO.funil == f0) & (MO.janela == "propria") & (MO.conjunto == "todas")]
             if not len(x): continue
             u = x.iloc[0]; txt.append(f"=== {f0} · janela curta {u.janela_curta} {u.unidade_janela} · longa {u.janela_longa} {u.unidade_janela}")
             for _, m in x.iterrows():
                 al = ",".join(k_[7:] for k_ in ("ALARME_ROI", "ALARME_CLV", "ALARME_BRIER") if bool(m[k_])) or "—"
-                txt.append(f"   {m.regra.split(' ')[0]:<26} ROI curta {f_(m.roi_curta_atual, '+.3f')} longa {f_(m.roi_longa_atual, '+.3f')} · supera fech {f_(m.supera_fech_curta_atual, '.0%')} · Brier skill {f_(m.bsskill_curta_atual, '+.4f')} · "
+                txt.append(f"   {m.regra.split(' ')[0]:<26} ROI curta {f_(m.roi_curta_atual, '+.3f')} longa {f_(m.roi_longa_atual, '+.3f')} · mk_fech {f_(m.mk_fech_curta_atual, '+.4f')} (supera {f_(m.supera_fech_curta_atual, '.0%')}) · Brier skill {f_(m.bsskill_curta_atual, '+.4f')} · "
                            f"DD atual {f_(m.drawdown_atual, '.1f')} (máx {f_(m.maxdd, '.1f')}) · tempo com ROI curta < 0: {f_(m.pct_tempo_roi_curta_negativo, '.0%')} · alarmes agora: {al}")
         txt.append("   (todas → monitor_alarmes.csv · séries → rolling_top.csv.gz · gráficos → graficos/*.svg)")
         txt.append("")

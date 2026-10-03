@@ -9,11 +9,20 @@ v5.0 (03/10): o que já existia continua IGUAL (mesmos números com a entrada de
   - TODAS as técnicas com 3 regras de entrada: hoje (edge = p − 1/odd > 0, que é EXATAMENTE EV = p·odd − 1 > 0), EV > 5% e EV > 10% (funis _EV5 / _EV10).
   - CLV e MARKOUT do lado apostado: o mercado (prob. sem margem) 5, 10, 15, 20 e 25 minutos depois — % a favor, quanto andou a favor e contra, "ROI do
     markout" (odd·q(t+h) − 1) — e o FECHAMENTO (última odd do jogo depois da aposta; usa zz40/zz45 SÓ para odds se estiverem na pasta): CLV = odd·q_fech − 1
-    e % que superou o fechamento. Regras novas: clv_medio, clv_taxa e clv_taxa_com_skill (taxa de superação entre as opções com Brier skill > 0).
+    e % que superou o fechamento. Regras novas: clv_medio, clv_mk e clv_mk_com_skill (movimento médio do mercado até o fechamento entre as opções com
+    Brier skill > 0).
+    CUIDADO 1: a "% que superou o fechamento" NÃO tem 50% como referência: mesmo sem vantagem nenhuma, em zebra ela fica abaixo de 50% e em favorito acima.
+    Por isso a escolha e o alarme usam o MOVIMENTO MÉDIO (q_fech − q, referência 0), e a % aparece só como descrição.
+    CUIDADO 2: ao vivo o "fechamento" é a última odd do jogo (35/40/45 min), perto do resultado: o CLV de fechamento acompanha o lucro e não é uma
+    confirmação independente. Os horizontes fixos (+5/+10 min) são o sinal menos ruidoso.
   - MODO SOMBRA: cada troca de opção roda N_SOMBRA (50) jogos em sombra e só vira produção se a CLV (ou o Brier skill) vencer a produção congelada.
   - ROI × ROI ESPERADO (EV do modelo e EV CALIBRADO no passado da própria opção), regressão lucro ~ EV, variância real × esperada, IC do ROI e do CLV.
   - ROI/CLV/Brier skill ROLANTES e ALARMES (monitor_alarmes.csv), drawdown, gráficos SVG (OUT_FUNIL\graficos, abrem no navegador), amostra de apostas.
     Sem coluna de data nos zz, "30 dias / 90 dias" viram 300 / 900 JOGOS (ajuste JANELA_ROLL_* no topo do validar_funil.py).
+  - Se houver jogos ao mesmo tempo além dos 2 de cada par, rode também com EMBARGO_ESCOLHA = 2 (topo do script) para ver se o resultado muda.
+  - TRAGA DE VOLTA, além do que já trazia: PROXIMAS_ESCOLHAS.txt, clv_markout.csv, ev_comparacao_pareada.csv, sombra.csv, sombra_eventos.csv.gz,
+    monitor_alarmes.csv, amostra_apostas.csv, odds_por_minuto.csv.gz (a auditoria do CLV usa), rolling_top.csv.gz e a pasta graficos
+    (da pasta OUT_FUNIL, ou OUT_FUNIL_CONTINUACAO se rodou a continuação).
   - Demora bem mais (24 funis): estimo 1 a 3 horas com o banco (NÃO medi com os dados reais). As previsões continuam vindo da BANCO_PREVISOES.
 v4.9 (03/10): + RODAR_FUNIL_CONTINUACAO.bat — o MESMO funil, mas usando também os jogos >= 8448 (o antigo lockbox) como continuação
   normal: re-treino e re-escolha a cada 2 jogos até o ÚLTIMO jogo dos zz. Saída em OUT_FUNIL_CONTINUACAO (não apaga a OUT_FUNIL).
