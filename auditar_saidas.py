@@ -246,7 +246,8 @@ if os.path.exists(fp_lv) and os.path.exists(fp_od) and "clv_fech" in pd.read_csv
           f"{len(LV)} apostas · {int(tem.sum())} com fechamento · horizontes {HZ}" + ("; " + "; ".join(e11) if e11 else ""))
     # A12: EV calibrado só com apostas de jogos ANTERIORES ao par
     MINC = int(cfg.get("min_calib", 30)); c_ok = LV.calib_ate_jogo >= 0
-    e12 = int((LV.calib_ate_jogo[c_ok] >= LV.par_a[c_ok] - EMB).sum());                        # REVISÃO: < início do par − EMBARGO_ESCOLHA e12b = int((np.abs(LV.ev_cal[LV.calib_n < MINC] - LV.ev[LV.calib_n < MINC]) > 1e-12).sum())
+    e12 = int((LV.calib_ate_jogo[c_ok] >= LV.par_a[c_ok] - EMB).sum())                         # REVISÃO: < início do par − EMBARGO_ESCOLHA
+    e12b = int((np.abs(LV.ev_cal[LV.calib_n < MINC] - LV.ev[LV.calib_n < MINC]) > 1e-12).sum())
     e12c = int((np.abs(LV.ev - (LV.p * LV.odd - 1)) > 1e-9).sum())
     checa("A12 EV calibrado: última aposta usada na calibração < início do par − embargo; sem histórico suficiente = EV do modelo; EV = p·odd − 1", e12 == 0 and e12b == 0 and e12c == 0,
           f"{int(c_ok.sum())} apostas com histórico de calibração · violações {e12}/{e12b}/{e12c}")
@@ -274,7 +275,7 @@ if os.path.exists(fp_sb) and os.path.exists(fp_se) and os.path.getsize(fp_se) > 
     pr = SE[SE.evento == "promovida"]; rj = SE[SE.evento == "rejeitada"]
     if (pr.jogos_em_sombra < NS).any() or (rj.jogos_em_sombra < NS).any(): e13.append("decisão de sombra com menos de N_SOMBRA jogos")
     if ((pr.sombra_desde >= pr.a) | (rj.sombra_desde >= rj.a)).any(): e13.append("sombra começando no par da decisão ou depois")
-    if (pr.metrica_sombra <= pr.metrica_producao).any() or (rj.metrica_sombra > rj.metrica_producao).any(): e13.append("promoção/rejeição incoerente com as métricas")
+    if (pr.metrica_sombra <= pr.metrica_producao).any() or (rj.metrica_sombra > rj.metrica_producao + 1e-12).any(): e13.append("promoção/rejeição incoerente com as métricas")
     if ((pr.amostra_sombra < MA) | (pr.amostra_producao < MA)).any(): e13.append("promoção com amostra < MIN_AMOSTRA_SOMBRA")
     for (fu, jan, conj, regra, cr), ev in SE.groupby(["funil", "janela", "conjunto", "regra", "criterio"]):
         n13 += 1; tr = t2[(t2.funil == fu) & (t2.janela == jan) & (t2.conjunto == conj) & (t2.regra == regra)].sort_values("a")

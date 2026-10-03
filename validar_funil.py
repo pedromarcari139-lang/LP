@@ -1187,7 +1187,7 @@ def sombra(idx_pares, a_pares, fim_pares, G, AC, crit, n_sombra, min_amostra):
                         mc, mp = (S[cand, hi] - S[cand, lo]) / nc_, (S[prod, hi] - S[prod, lo]) / np_
                         e_ = dict(a=int(a), producao=int(prod), sombra=int(cand), sombra_desde=s0, jogos_em_sombra=int(hi - lo), metrica_sombra=float(mc), metrica_producao=float(mp),
                                   amostra_sombra=float(nc_), amostra_producao=float(np_))
-                        if mc > mp: ev.append(dict(e_, evento="promovida")); prod, cand = cand, -1
+                        if mc > mp + 1e-12: ev.append(dict(e_, evento="promovida")); prod, cand = cand, -1   # empate NÃO vence (tolerância numérica)
                         else: ev.append(dict(e_, evento="rejeitada")); s0, avisou = int(a), False
                     elif not avisou:                                                            # REVISÃO: amostra insuficiente → registra (1× por janela)
                         ev.append(dict(a=int(a), evento="indeterminada", producao=int(prod), sombra=int(cand), sombra_desde=s0, jogos_em_sombra=int(hi - lo),
