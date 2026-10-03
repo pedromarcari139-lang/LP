@@ -1,10 +1,20 @@
-VALIDAR FUNIL (v4.9 — + CONTINUAÇÃO com os jogos do antigo lockbox; próxima escolha; escolha por minuto e ensemble; minutos 10 a 35)
+VALIDAR FUNIL (v5.0 — EV>0/5%/10%, CLV e markout, modo sombra, ROI × esperado, variância, rolling/alarmes, gráficos; continuação; por minuto; próxima escolha)
 ================================================
 
 O QUE É
   Um script NOVO, separado da rodada oficial. Não mexe em nada da etapa 1, não grava DECISAO e não prevê nenhum jogo >= 8448.
   Ele usa o motor (backtest_sujo.py / backtest_limpo.py), o .venv e a BANCO_PREVISOES que JÁ estão na pasta do RODAR.bat.
 
+v5.0 (03/10): o que já existia continua IGUAL (mesmos números com a entrada de hoje). A MAIS:
+  - TODAS as técnicas com 3 regras de entrada: hoje (edge = p − 1/odd > 0, que é EXATAMENTE EV = p·odd − 1 > 0), EV > 5% e EV > 10% (funis _EV5 / _EV10).
+  - CLV e MARKOUT do lado apostado: o mercado (prob. sem margem) 5, 10, 15, 20 e 25 minutos depois — % a favor, quanto andou a favor e contra, "ROI do
+    markout" (odd·q(t+h) − 1) — e o FECHAMENTO (última odd do jogo depois da aposta; usa zz40/zz45 SÓ para odds se estiverem na pasta): CLV = odd·q_fech − 1
+    e % que superou o fechamento. Regras novas: clv_medio, clv_taxa e clv_taxa_com_skill (taxa de superação entre as opções com Brier skill > 0).
+  - MODO SOMBRA: cada troca de opção roda N_SOMBRA (50) jogos em sombra e só vira produção se a CLV (ou o Brier skill) vencer a produção congelada.
+  - ROI × ROI ESPERADO (EV do modelo e EV CALIBRADO no passado da própria opção), regressão lucro ~ EV, variância real × esperada, IC do ROI e do CLV.
+  - ROI/CLV/Brier skill ROLANTES e ALARMES (monitor_alarmes.csv), drawdown, gráficos SVG (OUT_FUNIL\graficos, abrem no navegador), amostra de apostas.
+    Sem coluna de data nos zz, "30 dias / 90 dias" viram 300 / 900 JOGOS (ajuste JANELA_ROLL_* no topo do validar_funil.py).
+  - Demora bem mais (24 funis): estimo 1 a 3 horas com o banco (NÃO medi com os dados reais). As previsões continuam vindo da BANCO_PREVISOES.
 v4.9 (03/10): + RODAR_FUNIL_CONTINUACAO.bat — o MESMO funil, mas usando também os jogos >= 8448 (o antigo lockbox) como continuação
   normal: re-treino e re-escolha a cada 2 jogos até o ÚLTIMO jogo dos zz. Saída em OUT_FUNIL_CONTINUACAO (não apaga a OUT_FUNIL).
   ANTES: exporte de novo os zz10…zz35 (e o zzl, se usar) do MESMO banco, agora COM os jogos novos. Jogo ainda sem resultado é descartado (aparece no log).

@@ -16,6 +16,8 @@ Serve para a rodada sintética e para a rodada REAL (é só apontar para a OUT_F
   A8  livro de apostas do procedimento (apostas_procedimento.csv.gz) == lucro por par das trilhas == PPG e nº de apostas do resumo
   A10 (v4.8) próxima escolha das regras ppg/lucro/roi recalculada do zero
   A9  (v4.7) ensemble por minuto refeito do livro dos funis T10…T35 == ensemble_minutos.csv e apostas_ensemble.csv.gz
+  A11–A15 (v5.0) CLV/markout refeitos da tabela de odds; EV calibrado só com jogos < par; modo sombra refeito dos eventos; ROI/ROI esperado/CLV do resumo
+      == livro; limiar de EV respeitado
   A7  tabela de índices de decisões sorteadas: janela do histórico, último jogo do histórico, jogos do par, último jogo de treino da
       previsão usada — para conferir a olho (auditoria_indices.csv)
 USO: python auditar_saidas.py [pasta OUT_FUNIL]   → imprime e grava OUT_FUNIL/AUDITORIA_SAIDAS.txt; termina com erro se algo falhar.
@@ -192,24 +194,105 @@ else:
 fp_en = os.path.join(PASTA, "ensemble_minutos.csv")
 if os.path.exists(fp_en) and os.path.exists(fp_lv):
     EN = pd.read_csv(fp_en); LV = pd.read_csv(fp_lv); erros9, n9 = [], 0
-    fmin = sorted({f for f in LV.funil.unique() if re.fullmatch(r"T\d+", str(f))}, key=lambda f: int(f[1:]))
     lv_e = pd.read_csv(os.path.join(PASTA, "apostas_ensemble.csv.gz")) if os.path.exists(os.path.join(PASTA, "apostas_ensemble.csv.gz")) else None
-    for (jan, conj, regra), lv in LV[LV.funil.isin(fmin)].groupby(["janela", "conjunto", "regra"]):
+    todos_min = [f for f in LV.funil.unique() if re.fullmatch(r"T\d+(_EV\d+)?", str(f))]
+    for suf in sorted({re.sub(r"^T\d+", "", f) for f in todos_min}):                      # v5.0: um ensemble por limiar de EV ("" = hoje)
+     fmin = sorted([f for f in todos_min if re.sub(r"^T\d+", "", f) == suf], key=lambda f: int(re.match(r"T(\d+)", f).group(1))); nivel = suf.lstrip("_") or "EV0"
+     EN_s = EN[EN.nivel_ev == nivel] if "nivel_ev" in EN.columns else EN
+     lv_es = lv_e[lv_e.nivel_ev == nivel] if (lv_e is not None and "nivel_ev" in lv_e.columns) else lv_e
+     for (jan, conj, regra), lv in LV[LV.funil.isin(fmin)].groupby(["janela", "conjunto", "regra"]):
         jss = [set(JC[(JC.funil == f) & (JC.janela == jan) & (JC.conjunto == conj)].gameid) for f in fmin]
         if any(j != jss[0] for j in jss): erros9.append(f"{jan}/{conj}: jogos avaliados diferentes entre os minutos"); continue
         nj = len(jss[0]); ap_m = lv.sort_values(["gameid", "t"], kind="mergesort"); ap_f = ap_m.groupby("gameid", sort=False).head(1)
         for pol, ap in (("FIRST", ap_f), ("MULTI", ap_m)):
-            n9 += 1; e = EN[(EN.politica_ensemble == pol) & (EN.janela == jan) & (EN.conjunto == conj) & (EN.regra == regra)]
+            n9 += 1; e = EN_s[(EN_s.politica_ensemble == pol) & (EN_s.janela == jan) & (EN_s.conjunto == conj) & (EN_s.regra == regra)]
             if len(e) != 1: erros9.append(f"{pol}/{jan}/{conj}/{regra}: linha do ensemble ausente"); continue
             e = e.iloc[0]
             if abs(ap.lucro.sum() / nj - e.ppg) > 1e-9: erros9.append(f"{pol}/{jan}/{conj}/{regra}: refeito {ap.lucro.sum() / nj:+.6f} ≠ ensemble {e.ppg:+.6f}")
             if int(len(ap)) != int(e.n_apostas): erros9.append(f"{pol}/{jan}/{conj}/{regra}: {len(ap)} apostas refeitas ≠ {int(e.n_apostas)}")
-            if lv_e is not None:
-                x = lv_e[(lv_e.politica_ensemble == pol) & (lv_e.janela == jan) & (lv_e.conjunto == conj) & (lv_e.regra == regra)]
+            if lv_es is not None:
+                x = lv_es[(lv_es.politica_ensemble == pol) & (lv_es.janela == jan) & (lv_es.conjunto == conj) & (lv_es.regra == regra)]
                 if not (len(x) == len(ap) and np.array_equal(x.sort_values(["gameid", "t"]).gameid.values, ap.gameid.values) and abs(x.lucro.sum() - ap.lucro.sum()) < 1e-9):
                     erros9.append(f"{pol}/{jan}/{conj}/{regra}: livro do ensemble ≠ refeito")
     checa("A9 ensemble por minuto refeito do livro dos funis T10…T35 (FIRST = 1º minuto com aposta; MULTI = todos) == ensemble_minutos.csv", not erros9 and n9 > 0,
           f"{n9} séries · minutos {fmin}" + ("; " + "; ".join(erros9[:5]) if erros9 else ""))
+
+
+# ---------- v5.0: A11–A15 ----------
+fp_od = os.path.join(PASTA, "odds_por_minuto.csv.gz")
+if os.path.exists(fp_lv) and os.path.exists(fp_od) and "clv_fech" in pd.read_csv(fp_lv, nrows=1).columns:
+    LV = pd.read_csv(fp_lv, low_memory=False); OD = pd.read_csv(fp_od)
+    lado = lambda x: pd.to_numeric(x, errors="coerce").astype("Int64").astype(str) if pd.to_numeric(x, errors="coerce").notna().all() else x.astype(str)
+    LV["_s"], OD["_s"] = lado(LV["side"]), lado(OD["side"]); HZ = [int(h) for h in cfg.get("horizontes_clv", [5, 10, 15, 20, 25])]
+    e11 = []
+    if (OD.gameid >= L0).any(): e11.append("tabela de odds com jogo >= lockbox")
+    q_t = LV.merge(OD.rename(columns={"q": "_qt"})[["gameid", "_s", "t", "_qt"]], on=["gameid", "_s", "t"], how="left")["_qt"].values
+    if np.nanmax(np.abs(q_t - LV.q_devig.values)) > 1e-9 or np.isnan(q_t).any(): e11.append("q da aposta ≠ q da tabela de odds no minuto da aposta")
+    for h in HZ:                                                                              # q exatamente h minutos DEPOIS, no mesmo jogo e lado
+        x = LV[["gameid", "_s", "t"]].assign(t=LV.t + h).merge(OD[["gameid", "_s", "t", "q"]], on=["gameid", "_s", "t"], how="left")["q"].values
+        dif = np.nanmax(np.abs(x - LV[f"q_mais{h}"].values)) if np.isfinite(x).any() else 0.0
+        if not (np.array_equal(np.isnan(x), np.isnan(LV[f"q_mais{h}"].values)) and dif < 1e-12): e11.append(f"q em t+{h} refeito ≠ livro (dif {dif:.2e})")
+    ult = OD.sort_values("t").groupby(["gameid", "_s"]).tail(1)[["gameid", "_s", "t", "q", "odd"]].rename(columns={"t": "_mf", "q": "_qf", "odd": "_of"})
+    y = LV.merge(ult, on=["gameid", "_s"], how="left"); tem = (y._mf > y.t).values
+    qf = np.where(tem, y._qf, np.nan); mf = np.where(tem, y._mf, -1)
+    if not (np.array_equal(np.isnan(qf), np.isnan(LV.q_fech.values)) and np.nanmax(np.abs(qf - LV.q_fech.values)) < 1e-12 and np.array_equal(mf.astype(int), LV.minuto_fech.astype(int).values)):
+        e11.append("fechamento refeito (última odd do jogo depois da aposta) ≠ livro")
+    clv_r = LV.odd.values * qf - 1.0
+    if np.nanmax(np.abs(clv_r - LV.clv_fech.values)) > 1e-9 or not np.array_equal(np.isnan(clv_r), np.isnan(LV.clv_fech.values)): e11.append("CLV refeito ≠ livro")
+    sup_r = np.where(tem, (qf > LV.q_devig.values).astype(float), np.nan)
+    if not np.array_equal(np.nan_to_num(sup_r, nan=-1), np.nan_to_num(LV.supera_fech.values, nan=-1)): e11.append("supera o fechamento refeito ≠ livro")
+    if (LV.minuto_fech[LV.minuto_fech >= 0] <= LV.t[LV.minuto_fech >= 0]).any(): e11.append("fechamento num minuto <= o da aposta")
+    checa("A11 CLV/markout refeitos da tabela de odds (q em t+h do mesmo jogo/lado; fechamento = última odd do jogo DEPOIS da aposta) == livro", not e11,
+          f"{len(LV)} apostas · {int(tem.sum())} com fechamento · horizontes {HZ}" + ("; " + "; ".join(e11) if e11 else ""))
+    # A12: EV calibrado só com apostas de jogos ANTERIORES ao par
+    MINC = int(cfg.get("min_calib", 30)); c_ok = LV.calib_ate_jogo >= 0
+    e12 = int((LV.calib_ate_jogo[c_ok] >= LV.par_a[c_ok]).sum()); e12b = int((np.abs(LV.ev_cal[LV.calib_n < MINC] - LV.ev[LV.calib_n < MINC]) > 1e-12).sum())
+    e12c = int((np.abs(LV.ev - (LV.p * LV.odd - 1)) > 1e-9).sum())
+    checa("A12 EV calibrado: última aposta usada na calibração < início do par; sem histórico suficiente = EV do modelo; EV = p·odd − 1", e12 == 0 and e12b == 0 and e12c == 0,
+          f"{int(c_ok.sum())} apostas com histórico de calibração · violações {e12}/{e12b}/{e12c}")
+    # A15: limiar de EV e FIRST = no máximo 1 aposta por jogo
+    e15 = []
+    for fu, lv in LV.groupby("funil"):
+        m_ = re.search(r"_EV(\d+)$", str(fu)); thr = int(m_.group(1)) / 100 if m_ else 0.0
+        if (lv.ev <= thr).any(): e15.append(f"{fu}: {int((lv.ev <= thr).sum())} apostas com EV <= {thr}")
+        if (lv.edge <= 0).any(): e15.append(f"{fu}: aposta com edge <= 0")
+        if str(fu).startswith("FIRST") and lv.duplicated(["janela", "conjunto", "regra", "gameid"]).any(): e15.append(f"{fu}: FIRST com 2 apostas no mesmo jogo")
+    checa("A15 regra de entrada: EV > limiar do funil (0 / 5% / 10%), edge > 0, FIRST com no máximo 1 aposta por jogo", not e15, f"{LV.funil.nunique()} funis" + ("; " + "; ".join(e15[:5]) if e15 else ""))
+    # A14: ROI, ROI esperado, CLV e nº de apostas do resumo == livro
+    e14, n14 = [], 0
+    for (fu, jan, conj, regra), lv in LV.groupby(["funil", "janela", "conjunto", "regra"]):
+        r = R[(R.funil == fu) & (R.janela == jan) & (R.conjunto == conj) & (R.regra == regra) & (R.cadencia == f"a_cada_{PASSO_E}")]
+        if not len(r) or "roi_apostas" not in r.columns: continue
+        r = r.iloc[0]; n14 += 1; tm = lv.clv_fech.notna()
+        for nm, v in (("roi_apostas", lv.lucro.mean()), ("ev_medio_modelo", lv.ev.mean()), ("ev_medio_calibrado", lv.ev_cal.mean()), ("n_apostas_serie", len(lv)),
+                      ("clv_fech_medio", lv.clv_fech[tm].mean() if tm.any() else np.nan), ("supera_fech_taxa", lv.supera_fech[tm].mean() if tm.any() else np.nan)):
+            if not ((pd.isna(v) and pd.isna(r[nm])) or abs(float(v) - float(r[nm])) < 1e-9): e14.append(f"{fu}/{jan}/{conj}/{regra}: {nm} livro {v} ≠ resumo {r[nm]}")
+    checa("A14 ROI, ROI esperado (EV do modelo e calibrado), CLV, % supera e nº de apostas do resumo == recalculados do livro", not e14 and n14 > 0, f"{n14} séries" + ("; " + "; ".join(e14[:5]) if e14 else ""))
+fp_sb, fp_se = os.path.join(PASTA, "sombra.csv"), os.path.join(PASTA, "sombra_eventos.csv.gz")
+if os.path.exists(fp_sb) and os.path.exists(fp_se) and os.path.getsize(fp_se) > 30:
+    SB, SE = pd.read_csv(fp_sb), pd.read_csv(fp_se); NS, MA = int(cfg.get("n_sombra", 50)), float(cfg.get("min_amostra_sombra", 10)); e13, n13 = [], 0
+    pr = SE[SE.evento == "promovida"]; rj = SE[SE.evento == "rejeitada"]
+    if (pr.jogos_em_sombra < NS).any() or (rj.jogos_em_sombra < NS).any(): e13.append("decisão de sombra com menos de N_SOMBRA jogos")
+    if ((pr.sombra_desde >= pr.a) | (rj.sombra_desde >= rj.a)).any(): e13.append("sombra começando no par da decisão ou depois")
+    if (pr.metrica_sombra <= pr.metrica_producao).any() or (rj.metrica_sombra > rj.metrica_producao).any(): e13.append("promoção/rejeição incoerente com as métricas")
+    if ((pr.amostra_sombra < MA) | (pr.amostra_producao < MA)).any(): e13.append("promoção com amostra < MIN_AMOSTRA_SOMBRA")
+    for (fu, jan, conj, regra, cr), ev in SE.groupby(["funil", "janela", "conjunto", "regra", "criterio"]):
+        n13 += 1; tr = t2[(t2.funil == fu) & (t2.janela == jan) & (t2.conjunto == conj) & (t2.regra == regra)].sort_values("a")
+        ini = ev[ev.evento == "inicio_sombra"].merge(tr[["a", "escolhida"]], on="a", how="left")
+        if not ((ini.sombra == ini.escolhida) & (ini.sombra != ini.producao)).all(): e13.append(f"{fu}/{jan}/{conj}/{regra}/{cr}: sombra iniciada sem a regra querer trocar"); continue
+        prod, k = None, 0; mudancas = ev[ev.evento.isin(["inicio_producao", "promovida"])].sort_values("a")[["a", "evento", "producao", "sombra"]].values
+        prod_par = []
+        for a in tr.a.values:                                                                 # produção por par refeita só dos eventos
+            while k < len(mudancas) and mudancas[k][0] <= a:
+                prod = mudancas[k][2] if mudancas[k][1] == "inicio_producao" else mudancas[k][3]; k += 1
+            prod_par.append(prod)
+        js = JC[(JC.funil == fu) & (JC.janela == jan) & (JC.conjunto == conj)].gameid.values; lj = LJ[LJ.funil == fu].set_index(["opcao", "gameid"]).lucro
+        ini_a = tr.a.values; sg = np.searchsorted(ini_a, js, side="right") - 1
+        luc = np.array([lj.get((prod_par[i], g), 0.0) if (i >= 0 and prod_par[i] is not None) else 0.0 for g, i in zip(js, sg)])
+        rep_ = SB[(SB.funil == fu) & (SB.janela == jan) & (SB.conjunto == conj) & (SB.regra == regra) & (SB.criterio == cr)].ppg
+        if len(rep_) and abs(luc.mean() - float(rep_.iloc[0])) > 1e-9: e13.append(f"{fu}/{jan}/{conj}/{regra}/{cr}: PPG refeito {luc.mean():+.6f} ≠ {float(rep_.iloc[0]):+.6f}")
+    checa("A13 MODO SOMBRA refeito dos eventos: decisões só com >= N_SOMBRA jogos de sombra, sombra começa antes do par, promoção ⇔ métrica da sombra > produção; "
+          "produção por par refeita dos eventos dá o PPG do sombra.csv", not e13 and n13 > 0, f"{n13} séries · {len(pr)} promoções · {len(rj)} rejeições" + ("; " + "; ".join(e13[:5]) if e13 else ""))
 
 # ---------- A7: índices de decisões sorteadas ----------
 rows = []
