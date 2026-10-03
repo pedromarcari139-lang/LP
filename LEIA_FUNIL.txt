@@ -5,6 +5,8 @@ O QUE É
   Um script NOVO, separado da rodada oficial. Não mexe em nada da etapa 1, não grava DECISAO e não prevê nenhum jogo >= 8448.
   Ele usa o motor (backtest_sujo.py / backtest_limpo.py), o .venv e a BANCO_PREVISOES que JÁ estão na pasta do RODAR.bat.
 
+v4.7.1 (03/10): + RANKING só dos jogos >= 6115 (fase limpa com draft) em cada bloco do RESUMO e colunas ppg_desde_6115 no resumo_funil.csv
+  e no ensemble_minutos.csv.
 v4.7 (03/10): TUDO o que já rodava continua IGUAL (FIRST_10a35 e MULTI_10a35: uma escolha para os 6 minutos juntos). A MAIS:
   - funis T10, T15, T20, T25, T30, T35: cada regra escolhe o modelo × flag só com o histórico daquele minuto e aposta só nele
     (mesmos jogos, mesmas regras, benchmarks, acaso, MCS e Reality Check por minuto);

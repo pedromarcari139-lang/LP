@@ -1052,7 +1052,8 @@ def main():
         elif "funcao" not in r: assert r["ordenar"] in METRICAS, f"regra {r['nome']}: ordenar '{r['ordenar']}' não é métrica"
     P = [(n, a, b) for n, a, b in (("sujo", hist_ini, G_CLEAN), (f"limpo_{G_CLEAN}_{BS.CFG['INICIO_TESTE'] - 1}", G_CLEAN, int(BS.CFG["INICIO_TESTE"])),
                                    (f"limpo_{BS.CFG['INICIO_TESTE']}_{CORTE_TESTE - 1}", int(BS.CFG["INICIO_TESTE"]), CORTE_TESTE), (f"limpo_{CORTE_TESTE}_{L0 - 1}", CORTE_TESTE, L0)) if b > a]
-    log(f"VALIDAR FUNIL v4.7 · regime draft {REGIME_DRAFT} · C fixo {C_FIXO} · treino a cada {PASSO} · re-escolha a cada {PASSO_ESCOLHA} · minutos {KS['todos']} · "
+    PX = P + [(f"desde_{ini_draft}", ini_draft, L0)]                                            # v4.7: + período só da fase limpa com draft (PPG/ranking; sobrepõe os limpos)
+    log(f"VALIDAR FUNIL v4.7.1 · regime draft {REGIME_DRAFT} · C fixo {C_FIXO} · treino a cada {PASSO} · re-escolha a cada {PASSO_ESCOLHA} · minutos {KS['todos']} · "
         f"histórico desde {hist_ini} · opções com draft desde {ini_draft} · flags (início): {flag_ini} · {len(regras)} regras · lockbox {L0}+ NUNCA previsto · períodos {P}")
     for tag, (B, K) in M.items(): log(f"motor {tag}: famílias {B.CFG['FAMILIAS']} · CAL {[c for c in B.CFG['CAL_PARA'] if c.split('_')[0] in B.CFG['FAMILIAS']]} · ATOM {B.ORIGEM_ATOM}")
     brutos = carregar_brutos(BS, KS, conferir=True)
@@ -1223,7 +1224,7 @@ def main():
                 (rn, cad), (lu, nb, esc_g, seg_g, ii) = key, val
                 lc, nc = lu.reindex(js).fillna(0.0), nb.reindex(js).fillna(0.0); r_ = _bt(BS, lc)
                 per = {}
-                for (pn, pa, pb) in P:
+                for (pn, pa, pb) in PX:
                     m_, se_ = _media_se(lc[(js >= pa) & (js < pb)]); per[f"ppg_{pn}"] = m_; per[f"se_{pn}"] = se_
                 extra = dict(risco_serie(lc, nc))
                 if esc_g is not None: extra.update(_brier_proc(D, esc_g[gi], gi)); extra.update(risco_por_aposta(D, esc_g[gi], js))
@@ -1304,10 +1305,10 @@ def main():
     pd.concat(jogos_comuns, ignore_index=True).to_csv(os.path.join(OUT, "jogos_comuns.csv.gz"), index=False)
     EN = pd.DataFrame()
     if FUNIS_MIN:                                                                                 # v4.7: ENSEMBLE do melhor de cada minuto
-        EN, LVE = ensemble_minutos(G, ESC, BETS_MIN, JSM, SER, nomes, nomes_r, P)
+        EN, LVE = ensemble_minutos(G, ESC, BETS_MIN, JSM, SER, nomes, nomes_r, PX)
         EN.to_csv(os.path.join(OUT, "ensemble_minutos.csv"), index=False)
         if len(LVE): LVE.to_csv(os.path.join(OUT, "apostas_ensemble.csv.gz"), index=False)
-    escrever_resumo(R, PR, MC, MT, P, CP, pd.DataFrame(dist_rows), pd.DataFrame(momini), dict(regime=REGIME_DRAFT, C=C_FIXO, hist_ini=hist_ini, ini_draft=ini_draft, flag_ini=flag_ini, n_opcoes=len(opcoes), n_G=len(G), t0=t0, regras=nomes_r), EN)
+    escrever_resumo(R, PR, MC, MT, P, CP, pd.DataFrame(dist_rows), pd.DataFrame(momini), dict(PX=PX, regime=REGIME_DRAFT, C=C_FIXO, hist_ini=hist_ini, ini_draft=ini_draft, flag_ini=flag_ini, n_opcoes=len(opcoes), n_G=len(G), t0=t0, regras=nomes_r), EN)
     json.dump(dict(regime=REGIME_DRAFT, motor_info={tag: K["motor_info"] for tag, (B, K) in M.items()}, motores={tag: hashlib.sha256(open(os.path.join(AQUI, ARQ_SUJO if tag == "sujo" else ARQ_LIMPO), "rb").read()).hexdigest() for tag in M},
                    script_sha256=hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest(), C_FIXO=C_FIXO, PASSO=PASSO, PASSO_ESCOLHA=PASSO_ESCOLHA,
                    tempos=KS["todos"], min_treino=KS["min_nov"], lockbox_serio=L0, hist_inicio=hist_ini, inicio_opcoes_draft=ini_draft, embargo_escolha=EMBARGO_ESCOLHA, flag_inicio=flag_ini, min_hist=min_hist, conjuntos=list(CONJUNTOS), n_acaso=N_ACASO,
@@ -1363,7 +1364,7 @@ def ensemble_minutos(G, ESC, BETS_MIN, JSM, SER, nomes, nomes_r, P):
 def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info, EN=None):
     f_ = lambda v, fmt="+.4f": "n/d" if v is None or (isinstance(v, float) and not np.isfinite(v)) else format(v, fmt)
     cad2 = f"a_cada_{PASSO_ESCOLHA}"
-    txt = [f"VALIDAÇÃO DO FUNIL v4.7 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
+    txt = [f"VALIDAÇÃO DO FUNIL v4.7.1 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
            f"{info['n_G']} jogos executáveis desde {info['hist_ini']} · opções com draft desde {info['ini_draft']}",
            f"Treino e re-escolha a cada {PASSO}/{PASSO_ESCOLHA} jogos, histórico ACUMULADO · PPG = lucro ÷ jogos executáveis · tudo nos MESMOS jogos dentro de cada (funil, janela) · "
            f"IC 95% bootstrap por cluster de 10 gameids",
@@ -1401,6 +1402,12 @@ def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info, EN=None):
             txt.append(f"   [ref] {x.regra:<40} {f_(x.ppg)} [{f_(x.ic_lo)}; {f_(x.ic_hi)}] · ROI {f_(x.get('roi'), '+.3f')} · Sh {f_(x.get('sharpe_jogo'), '+.3f')} · DD {f_(x.get('maxdd'), '.1f')}"
                        + (f" · Brier skill {f_(x.get('bsskill_escolhida'), '+.5f')}" if pd.notna(x.get("bsskill_escolhida", np.nan)) else ""))
         txt.append("   PPG por período (" + ", ".join(pn for pn, _, _ in P) + "): " + " | ".join(f"{a.regra} " + "/".join(f_(a[f'ppg_{pn}'], '+.3f') for pn, _, _ in P) for _, a in a2.head(5).iterrows()))
+        pn_x, pa_x, _pb = info["PX"][-1]; cx, sx = f"ppg_{pn_x}", f"se_{pn_x}"                   # v4.7: RANKING só da fase limpa (desde o início das opções com draft)
+        if cx in r.columns:
+            rk = r[(r.cadencia == cad2) | ((r.cadencia == "-") & ~r.regra.str.startswith("FIXO_RETRO"))].sort_values(cx, ascending=False)
+            rk = rk[(rk.cadencia == cad2) | ~rk.regra.str.startswith("FIXO_") | (rk.index.isin(rk[rk.regra.str.startswith("FIXO_")].head(3).index))]
+            txt.append(f"   RANKING SÓ jogos >= {pa_x} (PPG ± erro-padrão por cluster; [ref] = benchmark; FIXO = os 3 melhores modelos fixos aqui, escolhidos OLHANDO o resultado): "
+                       + " | ".join(f"{'[ref] ' if x.cadencia == '-' else ''}{x.regra.split(' ')[0]} {f_(x[cx], '+.3f')}±{f_(x[sx], '.3f')}" for _, x in rk.iterrows()))
         txt.append("")
     if nomes_min and EN is not None and len(EN):                                                  # v4.7: escolha POR MINUTO e ENSEMBLE
         mins = [f["nome"] for f in FUNIS_MIN]
