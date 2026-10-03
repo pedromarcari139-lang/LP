@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-validar_funil.py — v4.8 (03/10/2026: + PRÓXIMA escolha e últimas escolhas de cada regra; v4.7: + escolha POR MINUTO e ensemble do melhor de cada minuto; v4.6: avaliação sem depender da versão do motor — roda com o motor v9.0; minutos 10–35; auditoria de vazamento, livro de apostas, INICIO_PREVISOES, paralelismo próprio) — VALIDAÇÃO DO FUNIL com re-treino E re-escolha a cada 2 jogos, opções (modelo × flag),
+validar_funil.py — v4.9 (03/10/2026: + modo CONTINUAÇÃO com os jogos do antigo lockbox; v4.8: + PRÓXIMA escolha e últimas escolhas de cada regra; v4.7: + escolha POR MINUTO e ensemble do melhor de cada minuto; v4.6: avaliação sem depender da versão do motor — roda com o motor v9.0; minutos 10–35; auditoria de vazamento, livro de apostas, INICIO_PREVISOES, paralelismo próprio) — VALIDAÇÃO DO FUNIL com re-treino E re-escolha a cada 2 jogos, opções (modelo × flag),
 MÉTRICAS do histórico de cada opção, REGRAS de escolha (simples ou compostas) e avaliação de cada regra por lucro, RISCO,
 VOLATILIDADE e OVERFIT; Brier / log loss olhados de várias formas.
 
@@ -126,6 +126,13 @@ SABOTAGEM_N = 3                     # decisões sorteadas por (funil, janela) em
 PASTA_SAIDA = "OUT_FUNIL"
 CFG_EXTRA = {}                      # vazio no uso normal (só para testes)
 # ========================================================================
+# v4.9 — CONTINUAÇÃO (RODAR_FUNIL_CONTINUACAO.bat põe FUNIL_CONTINUACAO=1): usa TAMBÉM os jogos que eram lockbox (>= 8448) como uma continuação
+# normal: re-treino e re-escolha a cada 2 jogos até o último jogo dos zz. O lockbox deixa de ser uma confirmação independente.
+CONTINUACAO = os.environ.get("FUNIL_CONTINUACAO") == "1"
+CORTE_ANTIGO = LOCKBOX_SERIO                                         # onde começava o lockbox (vira só um corte de período / de bloco)
+if CONTINUACAO:
+    LOCKBOX_SERIO = 10 ** 7                                          # sem lockbox: todo jogo dos zz entra
+    PASTA_SAIDA = PASTA_SAIDA + "_CONTINUACAO"
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 os.chdir(AQUI)
@@ -455,6 +462,12 @@ def carregar_brutos(B, K, conferir=True):
         if not os.path.exists(fp): raise FileNotFoundError(f"falta {fp} — copie o zz que falta (mesmo banco dos outros zz, até o jogo {LOCKBOX_SERIO - 1}) para esta pasta")
         G_ = B.carregar_bruto(t); n0 = len(G_); gid_ = pd.to_numeric(G_["gameid"], errors="coerce")
         brutos[t] = G_[(gid_ < K["L0"]).values].reset_index(drop=True).infer_objects()           # AUDITORIA: linhas do lockbox (gid >= L0) saem AQUI e nada mais as vê
+        if CONTINUACAO:                                                                         # v4.9: jogo ainda sem resultado não treina nem é avaliado
+            g_ = pd.to_numeric(brutos[t]["gameid"], errors="coerce"); sem = set(g_[pd.to_numeric(brutos[t]["resultado"], errors="coerce").isna()].dropna().astype(int))
+            if sem:
+                brutos[t] = brutos[t][~g_.isin(sem).values].reset_index(drop=True)
+                log(f"t{t}: {len(sem)} jogo(s) sem resultado descartados (ex.: {sorted(sem)[-5:]})")
+            log(f"t{t}: CONTINUAÇÃO — {int((pd.to_numeric(brutos[t]['gameid']) >= CORTE_ANTIGO).sum())} linhas de jogos >= {CORTE_ANTIGO} (o antigo lockbox) · último jogo {int(pd.to_numeric(brutos[t]['gameid']).max())}")
         assert int(pd.to_numeric(brutos[t]["gameid"]).max()) < K["L0"], "linha do lockbox na memória"
         log(f"t{t}: {B.ORIGEM_DADOS.get(t)} · {len(brutos[t])} linhas de desenvolvimento (gid < {K['L0']}); {n0 - len(brutos[t])} linhas do lockbox (ou sem gameid) descartadas na leitura")
     if conferir:
@@ -536,7 +549,10 @@ def manifesto_features(M):
 
 def blocos_motor(B, K, frames, ini):
     gid_max = max(int(f["gameid"].max()) for f in frames.values())
-    bp = [b for b in B.blocos_teste(gid_max) if b[1] < K["L0"] and b[2] <= K["L0"] and b[1] >= ini]
+    bl = B.blocos_teste(gid_max)
+    if CONTINUACAO:                                                                             # v4.9: mantém o corte de bloco no antigo lockbox (mesmos blocos de antes)
+        bl = [(i, a, b) for i, (a, b) in enumerate([x for (_, a, b) in bl for x in ([(a, CORTE_ANTIGO), (CORTE_ANTIGO, b)] if a < CORTE_ANTIGO < b else [(a, b)])])]
+    bp = [b for b in bl if b[1] < K["L0"] and b[2] <= K["L0"] and b[1] >= ini]
     assert bp, f"motor {K['tag']}: nenhum bloco de desenvolvimento"
     return bp
 
@@ -1051,10 +1067,11 @@ def main():
         if isinstance(r, str): assert r in METRICAS, f"regra '{r}' não é uma métrica de METRICAS"
         elif "funcao" not in r: assert r["ordenar"] in METRICAS, f"regra {r['nome']}: ordenar '{r['ordenar']}' não é métrica"
     P = [(n, a, b) for n, a, b in (("sujo", hist_ini, G_CLEAN), (f"limpo_{G_CLEAN}_{BS.CFG['INICIO_TESTE'] - 1}", G_CLEAN, int(BS.CFG["INICIO_TESTE"])),
-                                   (f"limpo_{BS.CFG['INICIO_TESTE']}_{CORTE_TESTE - 1}", int(BS.CFG["INICIO_TESTE"]), CORTE_TESTE), (f"limpo_{CORTE_TESTE}_{L0 - 1}", CORTE_TESTE, L0)) if b > a]
+                                   (f"limpo_{BS.CFG['INICIO_TESTE']}_{CORTE_TESTE - 1}", int(BS.CFG["INICIO_TESTE"]), CORTE_TESTE), (f"limpo_{CORTE_TESTE}_{CORTE_ANTIGO - 1}", CORTE_TESTE, CORTE_ANTIGO)) if b > a]
+    if CONTINUACAO: P.append((f"continuacao_{CORTE_ANTIGO}_fim", CORTE_ANTIGO, L0))             # v4.9: os jogos que eram lockbox
     PX = P + [(f"desde_{ini_draft}", ini_draft, L0)]                                            # v4.7: + período só da fase limpa com draft (PPG/ranking; sobrepõe os limpos)
-    log(f"VALIDAR FUNIL v4.8 · regime draft {REGIME_DRAFT} · C fixo {C_FIXO} · treino a cada {PASSO} · re-escolha a cada {PASSO_ESCOLHA} · minutos {KS['todos']} · "
-        f"histórico desde {hist_ini} · opções com draft desde {ini_draft} · flags (início): {flag_ini} · {len(regras)} regras · lockbox {L0}+ NUNCA previsto · períodos {P}")
+    log(f"VALIDAR FUNIL v4.9 · regime draft {REGIME_DRAFT} · C fixo {C_FIXO} · treino a cada {PASSO} · re-escolha a cada {PASSO_ESCOLHA} · minutos {KS['todos']} · "
+        f"histórico desde {hist_ini} · opções com draft desde {ini_draft} · flags (início): {flag_ini} · {len(regras)} regras · " + (f"CONTINUAÇÃO: SEM lockbox, jogos >= {CORTE_ANTIGO} entram normalmente" if CONTINUACAO else f"lockbox {L0}+ NUNCA previsto") + f" · períodos {P}")
     for tag, (B, K) in M.items(): log(f"motor {tag}: famílias {B.CFG['FAMILIAS']} · CAL {[c for c in B.CFG['CAL_PARA'] if c.split('_')[0] in B.CFG['FAMILIAS']]} · ATOM {B.ORIGEM_ATOM}")
     brutos = carregar_brutos(BS, KS, conferir=True)
     conferir_colunas_brutas(BS, KS, brutos, [B for (B, _) in M.values()])
@@ -1314,7 +1331,7 @@ def main():
                                    "jogos_no_par", "lucro_no_par", "apostas_no_par"]).to_csv(os.path.join(OUT, "trilhas.csv.gz"), index=False)
     pd.DataFrame(opcoes).to_csv(os.path.join(OUT, "opcoes.csv"), index=False)
     PXE = pd.DataFrame(proximas); PXE.to_csv(os.path.join(OUT, "proximas_escolhas.csv"), index=False)              # v4.8
-    lg_ = [f"PRÓXIMA ESCOLHA de cada regra para o jogo {a_prox} em diante (histórico até o jogo {a_prox - 1 - int(EMBARGO_ESCOLHA)}; nenhum dado do lockbox) — "
+    lg_ = [f"PRÓXIMA ESCOLHA de cada regra para o jogo {a_prox} em diante (histórico até o jogo {a_prox - 1 - int(EMBARGO_ESCOLHA)}; " + ("continuação: todos os jogos dos zz" if CONTINUACAO else "nenhum dado do lockbox") + ") — "
            f"também as 10 últimas escolhas. Tudo em proximas_escolhas.csv (inclui funis por minuto, 2ª/3ª colocadas e valores)."]
     for (fu_, jan_, cj_), x in PXE[PXE.funil.isin([f["nome"] for f in FUNIS])].groupby(["funil", "janela", "conjunto"], sort=False):
         lg_.append(f"=== {fu_} · janela {jan_} · opções {cj_}")
@@ -1390,7 +1407,7 @@ def ensemble_minutos(G, ESC, BETS_MIN, JSM, SER, nomes, nomes_r, P):
 def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info, EN=None):
     f_ = lambda v, fmt="+.4f": "n/d" if v is None or (isinstance(v, float) and not np.isfinite(v)) else format(v, fmt)
     cad2 = f"a_cada_{PASSO_ESCOLHA}"
-    txt = [f"VALIDAÇÃO DO FUNIL v4.8 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
+    txt = [f"VALIDAÇÃO DO FUNIL v4.9 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
            f"{info['n_G']} jogos executáveis desde {info['hist_ini']} · opções com draft desde {info['ini_draft']}",
            f"Treino e re-escolha a cada {PASSO}/{PASSO_ESCOLHA} jogos, histórico ACUMULADO · PPG = lucro ÷ jogos executáveis · tudo nos MESMOS jogos dentro de cada (funil, janela) · "
            f"IC 95% bootstrap por cluster de 10 gameids",
@@ -1468,7 +1485,7 @@ def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info, EN=None):
                    f"log loss {x.ll_mod:.4f} (mercado {x.ll_mkt:.4f}) skill {x.llskill:+.5f} z={f_(x.llskill_z, '+.2f')}")
     txt.append("   flag=1 × flag=0 × entrou/não entrou × lado apostado, por modelo, período e minuto → metricas_previsao_resumo.csv / _por_minuto.csv.gz")
     txt += ["", "LEIA COM CUIDADO:",
-            " - Desenvolvimento: jogos já vistos em análises; mede o MÉTODO, não confirma nada. A confirmação é o lockbox (8448+).",
+            " - " + (f"CONTINUAÇÃO: os jogos >= {CORTE_ANTIGO} (antigo lockbox) entraram como jogos normais — não há mais confirmação fora da amostra; o período continuacao_{CORTE_ANTIGO}_fim é o único ainda não usado para ESCOLHER regras." if CONTINUACAO else "Desenvolvimento: jogos já vistos em análises; mede o MÉTODO, não confirma nada. A confirmação é o lockbox (8448+)."),
             f" - {len(info['regras'])} regras × {len(JANELAS)} janelas × {len(FUNIS)} funis: use o Reality Check/MCS (já corrigem pelas regras dentro de cada funil/janela) "
             "antes de dizer que uma regra é melhor; escolher pelo maior PPG desta tabela é seleção múltipla. Regras novas entram na mesma conta.",
             " - Métricas 'todas'/'entradas' comparam opções em LINHAS diferentes (cada flag tem o seu universo): o skill é relativo ao mercado nas mesmas linhas; Brier/log loss cru não.",

@@ -1,0 +1,32 @@
+AUDITORIA INDEPENDENTE de /tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/v47/A/OUT_FUNIL_CONTINUACAO · lockbox 10000000 · PASSO 2 · PASSO_ESCOLHA 2 · MIN_HIST 50 · embargo 0
+[OK ] A1 nenhum jogo do lockbox nas saídas — 21 arquivos lidos
+[OK ] A2a treino termina antes do par (gid_treino_max < início do par) — 13152 treinos · folga mínima 1
+[OK ] A2b cada treino prevê um único par
+[OK ] A2c um treino por (motor, minuto, candidato, par)
+[OK ] A3 toda previsão tem o treino do seu par, terminado antes do par — 55404 previsões · 13152 (minuto, candidato, par)
+[OK ] A4a pares contíguos de <= PASSO_ESCOLHA jogos — 281 pares
+[OK ] A4b nº de opções elegíveis recalculado == gravado — 281 decisões sorteadas × conjuntos · 0 divergências
+[OK ] A4c a opção escolhida era elegível na decisão — 0 escolhas não elegíveis
+[OK ] A5 regras ppg/lucro/roi recalculadas do zero == trilhas (escolha e PPG histórico) — 24576 decisões conferidas em 96 combinações · 0 divergências
+[OK ] A6 PPG do procedimento 'ppg' recalculado == resumo_funil — 32 combinações · dif máx 1.11e-16
+[OK ] A10 próxima escolha (regras ppg/lucro/roi) recalculada do zero == proximas_escolhas.csv; decisão <= lockbox — 96 próximas escolhas conferidas
+[OK ] A8 livro de apostas == lucro por par das trilhas == PPG e nº de apostas do resumo; aposta só da opção escolhida no par — 320 séries (regra × funil × janela × conjunto) · 84543 apostas
+[OK ] A9 ensemble por minuto refeito do livro dos funis T10…T35 (FIRST = 1º minuto com aposta; MULTI = todos) == ensemble_minutos.csv — 80 séries · minutos ['T10', 'T15', 'T20', 'T25', 'T30', 'T35']
+[OK ] A7 índices: último jogo do histórico e do treino < início do par — tabela em auditoria_indices.csv
+      funil  decisao_a par_jogos               escolhida janela_historico  ultimo_jogo_no_historico  jogos_no_historico_da_escolhida  opcoes_elegiveis  treino_da_previsao_usada_ate
+FIRST_10a35        390   390–391                 V6E_INI       [200, 390)                       389                              188                18                           389
+MULTI_10a35        480   480–481    TUDO_INI_CALR|bisolo       [420, 480)                       479                               60                81                           479
+MULTI_10a35        598   598–599    TUDO_INI_CALR|bisolo       [420, 598)                       597                              178                81                           597
+MULTI_10a35        744   744–745           TUDO_INI_CALR       [420, 744)                       743                              324                81                           743
+        T10        658   658–659     TUDO_INI_CALR|bipro       [420, 658)                       657                              238                81                           657
+        T20        538   538–539 TUDO_INI_CALR|cWRgrande       [420, 538)                       537                              118                81                           537
+        T20        740   740–741           TUDO_INI_CALR       [420, 740)                       739                              320                81                           739
+        T25        376   376–377    V6E_MOM|cPROBSgrande       [200, 376)                       375                              174                18                           375
+        T25        410   410–411    V6E_MOM|cPROBSgrande       [200, 410)                       409                              208                18                           409
+        T30        250   250–251   V6WR_MOM|cPROBSgrande       [200, 250)                       249                               50                18                           249
+        T30        310   310–311                  V6_MOM       [200, 310)                       309                              108                18                           309
+        T30        322   322–323                  V6_MOM       [200, 322)                       321                              120                18                           321
+        T30        534   534–535    TUDO_INI_CALR|bisolo       [420, 534)                       533                              114                81                           533
+        T30        572   572–573    TUDO_INI_CALR|bisolo       [420, 572)                       571                              152                81                           571
+        T30        606   606–607    TUDO_INI_CALR|bisolo       [420, 606)                       605                              186                81                           605
+RESULTADO: TUDO OK
