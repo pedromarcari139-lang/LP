@@ -14,6 +14,7 @@ Serve para a rodada sintética e para a rodada REAL (é só apontar para a OUT_F
       dão a MESMA escolha e o mesmo PPG histórico da escolhida que a trilha gravada
   A6  PPG do procedimento (regra ppg, a cada 2) recalculado das trilhas + lucro_por_jogo == o do resumo_funil.csv
   A8  livro de apostas do procedimento (apostas_procedimento.csv.gz) == lucro por par das trilhas == PPG e nº de apostas do resumo
+  A9  (v4.7) ensemble por minuto refeito do livro dos funis T10…T35 == ensemble_minutos.csv e apostas_ensemble.csv.gz
   A7  tabela de índices de decisões sorteadas: janela do histórico, último jogo do histórico, jogos do par, último jogo de treino da
       previsão usada — para conferir a olho (auditoria_indices.csv)
 USO: python auditar_saidas.py [pasta OUT_FUNIL]   → imprime e grava OUT_FUNIL/AUDITORIA_SAIDAS.txt; termina com erro se algo falhar.
@@ -161,6 +162,29 @@ if os.path.exists(fp_lv):
           f"{n8} séries (regra × funil × janela × conjunto) · {len(LV)} apostas" + ("; " + "; ".join(erros8[:5]) if erros8 else ""))
 else:
     checa("A8 livro de apostas presente", False, "apostas_procedimento.csv.gz não existe")
+
+# ---------- A9 (v4.7): ENSEMBLE por minuto refeito do LIVRO dos funis T10…T35 ----------
+fp_en = os.path.join(PASTA, "ensemble_minutos.csv")
+if os.path.exists(fp_en) and os.path.exists(fp_lv):
+    EN = pd.read_csv(fp_en); LV = pd.read_csv(fp_lv); erros9, n9 = [], 0
+    fmin = sorted({f for f in LV.funil.unique() if re.fullmatch(r"T\d+", str(f))}, key=lambda f: int(f[1:]))
+    lv_e = pd.read_csv(os.path.join(PASTA, "apostas_ensemble.csv.gz")) if os.path.exists(os.path.join(PASTA, "apostas_ensemble.csv.gz")) else None
+    for (jan, conj, regra), lv in LV[LV.funil.isin(fmin)].groupby(["janela", "conjunto", "regra"]):
+        jss = [set(JC[(JC.funil == f) & (JC.janela == jan) & (JC.conjunto == conj)].gameid) for f in fmin]
+        if any(j != jss[0] for j in jss): erros9.append(f"{jan}/{conj}: jogos avaliados diferentes entre os minutos"); continue
+        nj = len(jss[0]); ap_m = lv.sort_values(["gameid", "t"], kind="mergesort"); ap_f = ap_m.groupby("gameid", sort=False).head(1)
+        for pol, ap in (("FIRST", ap_f), ("MULTI", ap_m)):
+            n9 += 1; e = EN[(EN.politica_ensemble == pol) & (EN.janela == jan) & (EN.conjunto == conj) & (EN.regra == regra)]
+            if len(e) != 1: erros9.append(f"{pol}/{jan}/{conj}/{regra}: linha do ensemble ausente"); continue
+            e = e.iloc[0]
+            if abs(ap.lucro.sum() / nj - e.ppg) > 1e-9: erros9.append(f"{pol}/{jan}/{conj}/{regra}: refeito {ap.lucro.sum() / nj:+.6f} ≠ ensemble {e.ppg:+.6f}")
+            if int(len(ap)) != int(e.n_apostas): erros9.append(f"{pol}/{jan}/{conj}/{regra}: {len(ap)} apostas refeitas ≠ {int(e.n_apostas)}")
+            if lv_e is not None:
+                x = lv_e[(lv_e.politica_ensemble == pol) & (lv_e.janela == jan) & (lv_e.conjunto == conj) & (lv_e.regra == regra)]
+                if not (len(x) == len(ap) and np.array_equal(x.sort_values(["gameid", "t"]).gameid.values, ap.gameid.values) and abs(x.lucro.sum() - ap.lucro.sum()) < 1e-9):
+                    erros9.append(f"{pol}/{jan}/{conj}/{regra}: livro do ensemble ≠ refeito")
+    checa("A9 ensemble por minuto refeito do livro dos funis T10…T35 (FIRST = 1º minuto com aposta; MULTI = todos) == ensemble_minutos.csv", not erros9 and n9 > 0,
+          f"{n9} séries · minutos {fmin}" + ("; " + "; ".join(erros9[:5]) if erros9 else ""))
 
 # ---------- A7: índices de decisões sorteadas ----------
 rows = []
