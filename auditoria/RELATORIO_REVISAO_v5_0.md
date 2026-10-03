@@ -52,9 +52,9 @@ Estado: revisão adversarial independente CONCLUÍDA (6 revisores + céticos); a
 
 ## 4. Testes executados (sintéticos)
 - **Unitários:** `teste_v50.py` 14 OK (CLV, fechamento, sombra, EV calibrado, rolante, limiar de EV no FIRST) e `teste_regras.py` 15 OK.
-- **Rodada base v5.0:** auditor A1–A15 OK, exceto A9 (bug de rótulo do ensemble `_EV5` × `EV5`; corrigido no código depois da rodada, ainda NÃO re-rodado).
+- **Rodadas finais (código depois da revisão):** base A1–A15 TUDO OK; continuação A1–A15 TUDO OK; continuação × normal: 567.456 decisões antes do antigo lockbox idênticas.
 - **Regressão:** regras e benchmarks antigos com EV > 0 têm diferença 0 em relação à v4.8 (trilhas e resumo).
-- **Sabotagem de ponta a ponta:** ver tabela acima, TUDO OK.
+- **Sabotagem de ponta a ponta (código final):** 457.056 decisões, 172.626 apostas do livro (CLV, fechamento, EV calibrado) e 11.109 eventos da sombra antes do corte idênticos.
 
 ## 5. O que NÃO foi verificado / ressalvas
 - **Dados reais e motor real:** nada rodou com os dados reais nem com o motor v9.0 real; usei o v9.0.1 sem a seção 10.

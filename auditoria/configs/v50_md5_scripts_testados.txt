@@ -1,0 +1,3 @@
+ac40cca403c63d59a73e1b6817d8924e  /tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/v50/A/validar_funil.py
+ac40cca403c63d59a73e1b6817d8924e  /tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/v50/SAB/validar_funil.py
+ac40cca403c63d59a73e1b6817d8924e  /tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/v50/C/validar_funil.py

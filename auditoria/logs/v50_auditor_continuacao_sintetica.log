@@ -1,5 +1,5 @@
-AUDITORIA INDEPENDENTE de /tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/v50/A/OUT_FUNIL_CONTINUACAO · lockbox 10000000 · PASSO 2 · PASSO_ESCOLHA 2 · MIN_HIST 50 · embargo 0
-[OK ] A1 nenhum jogo do lockbox nas saídas — 28 arquivos lidos
+AUDITORIA INDEPENDENTE de /tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/v50/C/OUT_FUNIL_CONTINUACAO · lockbox 10000000 · PASSO 2 · PASSO_ESCOLHA 2 · MIN_HIST 50 · embargo 0
+[OK ] A1 nenhum jogo do lockbox nas saídas — 29 arquivos lidos
 [OK ] A2a treino termina antes do par (gid_treino_max < início do par) — 13152 treinos · folga mínima 1
 [OK ] A2b cada treino prevê um único par
 [OK ] A2c um treino por (motor, minuto, candidato, par)
@@ -10,13 +10,13 @@ AUDITORIA INDEPENDENTE de /tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21
 [OK ] A5 regras ppg/lucro/roi recalculadas do zero == trilhas (escolha e PPG histórico) — 73728 decisões conferidas em 288 combinações · 0 divergências
 [OK ] A6 PPG do procedimento 'ppg' recalculado == resumo_funil — 96 combinações · dif máx 1.67e-16
 [OK ] A10 próxima escolha (regras ppg/lucro/roi) recalculada do zero == proximas_escolhas.csv; decisão <= lockbox — 288 próximas escolhas conferidas
-[OK ] A8 livro de apostas == lucro por par das trilhas == PPG e nº de apostas do resumo; aposta só da opção escolhida no par — 1104 séries (regra × funil × janela × conjunto) · 255090 apostas
+[OK ] A8 livro de apostas == lucro por par das trilhas == PPG e nº de apostas do resumo; aposta só da opção escolhida no par — 1104 séries (regra × funil × janela × conjunto) · 254924 apostas
 [OK ] A9 ensemble por minuto refeito do livro dos funis T10…T35 (FIRST = 1º minuto com aposta; MULTI = todos) == ensemble_minutos.csv — 276 séries · minutos ['T10_EV5', 'T15_EV5', 'T20_EV5', 'T25_EV5', 'T30_EV5', 'T35_EV5']
-[OK ] A11 CLV/markout refeitos da tabela de odds (q em t+h do mesmo jogo/lado; fechamento = última odd do jogo DEPOIS da aposta) == livro — 255090 apostas · 232580 com fechamento · horizontes [5, 10, 15, 20, 25]
-[OK ] A12 EV calibrado: última aposta usada na calibração < início do par; sem histórico suficiente = EV do modelo; EV = p·odd − 1 — 255090 apostas com histórico de calibração · violações 0/0/0
+[OK ] A11 CLV/markout refeitos da tabela de odds (q em t+h do mesmo jogo/lado; fechamento = última odd do jogo DEPOIS da aposta) == livro — 254924 apostas · 232410 com fechamento · horizontes [5, 10, 15, 20, 25]
+[OK ] A12 EV calibrado: última aposta usada na calibração < início do par − embargo; sem histórico suficiente = EV do modelo; EV = p·odd − 1 — 254924 apostas com histórico de calibração · violações 0/0/0
 [OK ] A15 regra de entrada: EV > limiar do funil (0 / 5% / 10%), edge > 0, FIRST com no máximo 1 aposta por jogo — 24 funis
 [OK ] A14 ROI, ROI esperado (EV do modelo e calibrado), CLV, % supera e nº de apostas do resumo == recalculados do livro — 1104 séries
-[OK ] A13 MODO SOMBRA refeito dos eventos: decisões só com >= N_SOMBRA jogos de sombra, sombra começa antes do par, promoção ⇔ métrica da sombra > produção; produção por par refeita dos eventos dá o PPG do sombra.csv — 552 séries · 644 promoções · 930 rejeições
+[OK ] A13 (CONSISTÊNCIA, não prova de não-vazamento — essa vem da sabotagem) MODO SOMBRA refeito dos eventos: decisões só com >= N_SOMBRA jogos de sombra, sombra começa antes do par, promoção ⇔ métrica da sombra > produção; produção por par refeita dos eventos dá o PPG do sombra.csv — 552 séries · 642 promoções · 989 rejeições
 [OK ] A7 índices: último jogo do histórico e do treino < início do par — tabela em auditoria_indices.csv
           funil  decisao_a par_jogos             escolhida janela_historico  ultimo_jogo_no_historico  jogos_no_historico_da_escolhida  opcoes_elegiveis  treino_da_previsao_usada_ate
     FIRST_10a35        464   464–465               V6E_INI       [200, 464)                       463                            262.0                36                         463.0
