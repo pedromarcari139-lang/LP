@@ -1,10 +1,13 @@
-VALIDAR FUNIL (v4.7 — + escolha POR MINUTO e ensemble; corrige o erro "_alerta_epv_atual"; minutos 10 a 35) — como rodar no PC da Amanda
+VALIDAR FUNIL (v4.8 — + próxima escolha de cada regra; escolha por minuto e ensemble; minutos 10 a 35) — como rodar no PC da Amanda
 ================================================
 
 O QUE É
   Um script NOVO, separado da rodada oficial. Não mexe em nada da etapa 1, não grava DECISAO e não prevê nenhum jogo >= 8448.
   Ele usa o motor (backtest_sujo.py / backtest_limpo.py), o .venv e a BANCO_PREVISOES que JÁ estão na pasta do RODAR.bat.
 
+v4.8 (03/10): + OUT_FUNIL\PROXIMAS_ESCOLHAS.txt e proximas_escolhas.csv: para CADA funil, janela, conjunto e regra, a opção (modelo × flag)
+  que a regra escolheria para o jogo 8448 em diante (com o histórico até o 8447 — nenhum dado do lockbox), a 2ª e a 3ª colocadas, o valor da
+  métrica e as 10 últimas escolhas. A auditoria A10 refaz essa escolha do zero para as regras ppg/lucro/roi.
 v4.7.1 (03/10): + RANKING só dos jogos >= 6115 (fase limpa com draft) em cada bloco do RESUMO e colunas ppg_desde_6115 no resumo_funil.csv
   e no ensemble_minutos.csv.
 v4.7 (03/10): TUDO o que já rodava continua IGUAL (FIRST_10a35 e MULTI_10a35: uma escolha para os 6 minutos juntos). A MAIS:

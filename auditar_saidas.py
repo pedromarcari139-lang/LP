@@ -14,6 +14,7 @@ Serve para a rodada sintética e para a rodada REAL (é só apontar para a OUT_F
       dão a MESMA escolha e o mesmo PPG histórico da escolhida que a trilha gravada
   A6  PPG do procedimento (regra ppg, a cada 2) recalculado das trilhas + lucro_por_jogo == o do resumo_funil.csv
   A8  livro de apostas do procedimento (apostas_procedimento.csv.gz) == lucro por par das trilhas == PPG e nº de apostas do resumo
+  A10 (v4.8) próxima escolha das regras ppg/lucro/roi recalculada do zero
   A9  (v4.7) ensemble por minuto refeito do livro dos funis T10…T35 == ensemble_minutos.csv e apostas_ensemble.csv.gz
   A7  tabela de índices de decisões sorteadas: janela do histórico, último jogo do histórico, jogos do par, último jogo de treino da
       previsão usada — para conferir a olho (auditoria_indices.csv)
@@ -141,6 +142,30 @@ d5 = sum(r[5] for r in res5); n5 = sum(r[4] for r in res5)
 checa("A5 regras ppg/lucro/roi recalculadas do zero == trilhas (escolha e PPG histórico)", d5 == 0, f"{n5} decisões conferidas em {len(res5)} combinações · {d5} divergências")
 d6 = max(abs(a - b) for (*_, a, b) in res6)
 checa("A6 PPG do procedimento 'ppg' recalculado == resumo_funil", d6 < 1e-9, f"{len(res6)} combinações · dif máx {d6:.2e}")
+
+# ---------- A10 (v4.8): PRÓXIMA escolha das regras ppg / lucro / roi recalculada do zero (histórico < decisão; decisão <= lockbox) ----------
+fp_px = os.path.join(PASTA, "proximas_escolhas.csv")
+if os.path.exists(fp_px):
+    PXE = pd.read_csv(fp_px); d10, n10 = [], 0
+    if len(PXE) and int(PXE.decisao_para_jogo.max()) > L0: d10.append("decisão depois do lockbox")
+    for fu in LJ.funil.unique():
+        lj = LJ[LJ.funil == fu]; Lm = np.zeros((len(nomes), len(U))); Nm = np.zeros((len(nomes), len(U))); idx_o = {n: i for i, n in enumerate(nomes)}
+        Lm[lj.opcao.map(idx_o).values, lj.gameid.map(pos_u).values] = lj.lucro.values; Nm[lj.opcao.map(idx_o).values, lj.gameid.map(pos_u).values] = lj.n_apostas.values
+        for _, r in PXE[(PXE.funil == fu) & PXE.regra.isin(["ppg", "lucro", "roi"])].iterrows():
+            a = int(r.decisao_para_jogo); el = elegiveis_em(a, r.conjunto); fim = a - EMB; n10 += 1
+            if int(el.sum()) != int(r.opcoes_elegiveis): d10.append(f"{fu}/{r.janela}/{r.conjunto}/{r.regra}: elegíveis {int(el.sum())} ≠ {int(r.opcoes_elegiveis)}"); continue
+            w_ = W.copy() if r.janela == "propria" else np.full(len(W), W[el].max() if el.any() else 0)
+            vals = np.full(len(nomes), np.nan)
+            for j in np.where(el)[0]:
+                m = (U >= w_[j]) & (U < fim); s_, n_ap, n_j = Lm[j, m].sum(), Nm[j, m].sum(), int(m.sum())
+                vals[j] = s_ / n_j if r.regra == "ppg" else (s_ if r.regra == "lucro" else (s_ / n_ap if n_ap >= MIN_LINHAS else np.nan))
+            ok_ = el & np.isfinite(vals); esc = None
+            if ok_.any():
+                best = np.nanmax(np.where(ok_, vals, -np.inf)); esc = nomes[np.where(ok_ & (vals >= best - 1e-12))[0][0]]
+            rep_ = None if pd.isna(r.proxima_escolha) else r.proxima_escolha
+            if esc != rep_: d10.append(f"{fu}/{r.janela}/{r.conjunto}/{r.regra}: refeita {esc} ≠ gravada {rep_}")
+    checa("A10 próxima escolha (regras ppg/lucro/roi) recalculada do zero == proximas_escolhas.csv; decisão <= lockbox", not d10 and n10 > 0,
+          f"{n10} próximas escolhas conferidas" + ("; " + "; ".join(d10[:5]) if d10 else ""))
 
 # ---------- A8: livro de apostas do procedimento == lucro por par das trilhas == resumo final ----------
 fp_lv = os.path.join(PASTA, "apostas_procedimento.csv.gz")

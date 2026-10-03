@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-validar_funil.py — v4.7 (03/10/2026: + escolha POR MINUTO e ensemble do melhor de cada minuto; v4.6: avaliação sem depender da versão do motor — roda com o motor v9.0; minutos 10–35; auditoria de vazamento, livro de apostas, INICIO_PREVISOES, paralelismo próprio) — VALIDAÇÃO DO FUNIL com re-treino E re-escolha a cada 2 jogos, opções (modelo × flag),
+validar_funil.py — v4.8 (03/10/2026: + PRÓXIMA escolha e últimas escolhas de cada regra; v4.7: + escolha POR MINUTO e ensemble do melhor de cada minuto; v4.6: avaliação sem depender da versão do motor — roda com o motor v9.0; minutos 10–35; auditoria de vazamento, livro de apostas, INICIO_PREVISOES, paralelismo próprio) — VALIDAÇÃO DO FUNIL com re-treino E re-escolha a cada 2 jogos, opções (modelo × flag),
 MÉTRICAS do histórico de cada opção, REGRAS de escolha (simples ou compostas) e avaliação de cada regra por lucro, RISCO,
 VOLATILIDADE e OVERFIT; Brier / log loss olhados de várias formas.
 
@@ -1053,7 +1053,7 @@ def main():
     P = [(n, a, b) for n, a, b in (("sujo", hist_ini, G_CLEAN), (f"limpo_{G_CLEAN}_{BS.CFG['INICIO_TESTE'] - 1}", G_CLEAN, int(BS.CFG["INICIO_TESTE"])),
                                    (f"limpo_{BS.CFG['INICIO_TESTE']}_{CORTE_TESTE - 1}", int(BS.CFG["INICIO_TESTE"]), CORTE_TESTE), (f"limpo_{CORTE_TESTE}_{L0 - 1}", CORTE_TESTE, L0)) if b > a]
     PX = P + [(f"desde_{ini_draft}", ini_draft, L0)]                                            # v4.7: + período só da fase limpa com draft (PPG/ranking; sobrepõe os limpos)
-    log(f"VALIDAR FUNIL v4.7.1 · regime draft {REGIME_DRAFT} · C fixo {C_FIXO} · treino a cada {PASSO} · re-escolha a cada {PASSO_ESCOLHA} · minutos {KS['todos']} · "
+    log(f"VALIDAR FUNIL v4.8 · regime draft {REGIME_DRAFT} · C fixo {C_FIXO} · treino a cada {PASSO} · re-escolha a cada {PASSO_ESCOLHA} · minutos {KS['todos']} · "
         f"histórico desde {hist_ini} · opções com draft desde {ini_draft} · flags (início): {flag_ini} · {len(regras)} regras · lockbox {L0}+ NUNCA previsto · períodos {P}")
     for tag, (B, K) in M.items(): log(f"motor {tag}: famílias {B.CFG['FAMILIAS']} · CAL {[c for c in B.CFG['CAL_PARA'] if c.split('_')[0] in B.CFG['FAMILIAS']]} · ATOM {B.ORIGEM_ATOM}")
     brutos = carregar_brutos(BS, KS, conferir=True)
@@ -1126,11 +1126,13 @@ def main():
     if PASSO_ESCOLHA != PASSO: cortes = np.array(sorted({int(c) for c in cortes if (c - cortes[0]) % PASSO_ESCOLHA == 0} | {int(cortes[-1])}), dtype=np.int64)
     cad2 = f"a_cada_{PASSO_ESCOLHA}"
     SEG = {cad2: [(int(a), int(b)) for a, b in zip(cortes[:-1], cortes[1:])], "bloco_motor": [(int(g0), int(g1)) for (_, g0, g1) in BL["sujo"]]}
-    a_all = np.array(sorted({a for s in SEG.values() for a, _ in s}), dtype=np.int64); pos = {int(a): i for i, a in enumerate(a_all)}
+    a_prox = int(cortes[-1])                                                                 # v4.8: PRÓXIMA decisão (fim do último par, <= L0): só com o histórico < a_prox
+    a_all = np.array(sorted({a for s in SEG.values() for a, _ in s} | {a_prox}), dtype=np.int64); pos = {int(a): i for i, a in enumerate(a_all)}
+    assert a_prox <= L0 and a_prox not in {a for s in SEG.values() for a, _ in s}, "próxima decisão inválida"
     a_hist = a_all - int(EMBARGO_ESCOLHA)                                                    # fim (exclusivo) do histórico de cada decisão
     assert all(b <= L0 for sg in SEG.values() for _, b in sg) and np.all(a_hist <= a_all), "AUDITORIA: segmento além do lockbox ou histórico depois do início do par — ABORTADO"
     El = elegiveis(G, opcoes, a_hist, min_hist); rng = np.random.default_rng(int(BS.CFG["SEED"]))
-    linhas, pareados, trilhas, conf, comp, mcs_rows = [], [], [], [], [], []; jogos_comuns, dist_rows, momini, lucro_jogo, livro = [], [], [], [], []
+    linhas, pareados, trilhas, conf, comp, mcs_rows, proximas = [], [], [], [], [], [], []; jogos_comuns, dist_rows, momini, lucro_jogo, livro = [], [], [], [], []
     SER, ESC, BETS_MIN, JSM = {}, {}, {}, {}                                                 # v4.7: séries por jogo de cada funil e escolhas por minuto (ensemble)
     for fu in FUNIS + FUNIS_MIN:
         log(f"funil {fu['nome']}: somas por jogo de {len(opcoes)} opções…"); D = dados_funil(G, GMf, apostas_de, opcoes, fu)
@@ -1143,7 +1145,7 @@ def main():
             if not Elc.any(): log(f"{tag}: nenhuma opção neste conjunto — pulado"); continue
             Wd = janela_dec(opcoes, Elc, jan); Mx = matriz_metricas(D, opcoes, a_hist, Wd)
             # -- conferência 1: conta rápida == conta direta (todas as métricas)
-            com_el = np.where(Elc.any(axis=1))[0]; amostra = rng.choice(com_el, size=min(CONFERENCIA_N, len(com_el)), replace=False); dif_max = 0.0
+            com_el = np.where(Elc.any(axis=1))[0]; com_el = com_el[a_all[com_el] != a_prox]; amostra = rng.choice(com_el, size=min(CONFERENCIA_N, len(com_el)), replace=False); dif_max = 0.0
             for d in amostra:
                 for j in np.where(Elc[d])[0]:
                     vd = valores_direto(BS, D, j, a_hist[d], Wd[d, j])
@@ -1165,6 +1167,21 @@ def main():
                 for r in regras:
                     if not np.array_equal(aplicar_regra(r, M2, Elc)[ate], idx_base[nome_regra(r)][ate]): esc_dif += 1
             if esc_dif: raise AssertionError(f"{tag}: escolha MUDOU com o futuro trocado por ruído ({esc_dif} casos) — VAZAMENTO; nada foi gravado")
+            # -- v4.8: ÚLTIMAS escolhas (pares a cada 2) e a PRÓXIMA (para o jogo a_prox em diante, histórico < a_prox − embargo; nada do lockbox)
+            ip = pos[a_prox]; segs2 = SEG[cad2]
+            for r in regras:
+                nr_ = nome_regra(r); idx_r = idx_base[nr_]; ordem = r if isinstance(r, str) else r.get("ordenar")
+                k = int(idx_r[ip]); d_ = dict(funil=fu["nome"], janela=jan, conjunto=conj, regra=nr_, decisao_para_jogo=a_prox, historico_ate_jogo=int(a_hist[ip]) - 1,
+                                              opcoes_elegiveis=int(Elc[ip].sum()), proxima_escolha=nomes[k] if k >= 0 else ("NAO_APOSTA" if k == -2 else None),
+                                              valor_metrica=float(Mx[ordem][ip, k]) if (k >= 0 and ordem) else np.nan, ppg_historico=float(Mx["ppg"][ip, k]) if k >= 0 else np.nan,
+                                              n_apostas_historico=float(Mx["n_apostas"][ip, k]) if k >= 0 else np.nan)
+                if ordem:                                                                       # 2ª e 3ª colocadas pela mesma métrica (só elegíveis com valor)
+                    X_ = np.where(Elc[ip] & np.isfinite(Mx[ordem][ip]), Mx[ordem][ip] * SENTIDO[ordem], -np.inf); o_ = [j for j in np.argsort(-X_, kind="stable") if np.isfinite(X_[j]) and j != k][:2]
+                    for n_, j in enumerate(o_, 2): d_[f"opcao_{n_}"] = nomes[j]; d_[f"valor_{n_}"] = float(Mx[ordem][ip, j])
+                ult = [(a, idx_r[pos[a]]) for a, _ in segs2[-10:]]
+                d_["ultimas_10_escolhas"] = " · ".join(f"{a}:{nomes[k_] if k_ >= 0 else ('NAO_APOSTA' if k_ == -2 else '-')}" for a, k_ in ult)
+                d_["ultima_escolha"] = nomes[ult[-1][1]] if ult and ult[-1][1] >= 0 else None
+                proximas.append(d_)
             conf.append(dict(funil=fu["nome"], janela=jan, conjunto=conj, decisoes_conferidas=len(amostra), dif_relativa_max=dif_max, sabotagens=min(SABOTAGEM_N, len(amostra)), escolhas_alteradas=esc_dif))
             log(f"{tag}: {int(mask_c.sum())} opções · conta rápida × direta em {len(amostra)} decisões (dif máx {dif_max:.1e}) · sabotagem do futuro em {min(SABOTAGEM_N, len(amostra))}: 0 escolhas alteradas")
             # -- procedimento de cada regra, nas 2 cadências
@@ -1296,6 +1313,15 @@ def main():
     pd.DataFrame(trilhas, columns=["funil", "janela", "conjunto", "regra", "cadencia", "a", "b", "opcoes_elegiveis", "escolhida", "valor_ordenacao", "ppg_historico_escolhida",
                                    "jogos_no_par", "lucro_no_par", "apostas_no_par"]).to_csv(os.path.join(OUT, "trilhas.csv.gz"), index=False)
     pd.DataFrame(opcoes).to_csv(os.path.join(OUT, "opcoes.csv"), index=False)
+    PXE = pd.DataFrame(proximas); PXE.to_csv(os.path.join(OUT, "proximas_escolhas.csv"), index=False)              # v4.8
+    lg_ = [f"PRÓXIMA ESCOLHA de cada regra para o jogo {a_prox} em diante (histórico até o jogo {a_prox - 1 - int(EMBARGO_ESCOLHA)}; nenhum dado do lockbox) — "
+           f"também as 10 últimas escolhas. Tudo em proximas_escolhas.csv (inclui funis por minuto, 2ª/3ª colocadas e valores)."]
+    for (fu_, jan_, cj_), x in PXE[PXE.funil.isin([f["nome"] for f in FUNIS])].groupby(["funil", "janela", "conjunto"], sort=False):
+        lg_.append(f"=== {fu_} · janela {jan_} · opções {cj_}")
+        for _, r_ in x.iterrows():
+            lg_.append(f"   {r_.regra:<26} próxima: {str(r_.proxima_escolha):<28} (última: {str(r_.ultima_escolha):<28}) · métrica {r_.valor_metrica:+.5f} · PPG hist {r_.ppg_historico:+.4f} · "
+                       f"2ª {r_.get('opcao_2', '-')} · 3ª {r_.get('opcao_3', '-')}")
+    open(os.path.join(OUT, "PROXIMAS_ESCOLHAS.txt"), "w", encoding="utf-8").write("\n".join(lg_)); log("\n".join(lg_[:1]))
     if livro:
         LV = pd.concat(livro, ignore_index=True).sort_values(["funil", "janela", "conjunto", "regra", "gameid", "t"], kind="mergesort")
         LV["lucro_acumulado"] = LV.groupby(["funil", "janela", "conjunto", "regra"])["lucro"].cumsum()
@@ -1364,7 +1390,7 @@ def ensemble_minutos(G, ESC, BETS_MIN, JSM, SER, nomes, nomes_r, P):
 def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info, EN=None):
     f_ = lambda v, fmt="+.4f": "n/d" if v is None or (isinstance(v, float) and not np.isfinite(v)) else format(v, fmt)
     cad2 = f"a_cada_{PASSO_ESCOLHA}"
-    txt = [f"VALIDAÇÃO DO FUNIL v4.7.1 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
+    txt = [f"VALIDAÇÃO DO FUNIL v4.8 — {time.strftime('%Y-%m-%d %H:%M')} · regime draft {info['regime']} · C fixo {info['C']} · {info['n_opcoes']} opções (modelo × flag) · "
            f"{info['n_G']} jogos executáveis desde {info['hist_ini']} · opções com draft desde {info['ini_draft']}",
            f"Treino e re-escolha a cada {PASSO}/{PASSO_ESCOLHA} jogos, histórico ACUMULADO · PPG = lucro ÷ jogos executáveis · tudo nos MESMOS jogos dentro de cada (funil, janela) · "
            f"IC 95% bootstrap por cluster de 10 gameids",
