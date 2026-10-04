@@ -258,7 +258,46 @@ if os.path.exists(fp_lv) and os.path.exists(fp_od) and "clv_fech" in pd.read_csv
         if (lv.ev <= thr).any(): e15.append(f"{fu}: {int((lv.ev <= thr).sum())} apostas com EV <= {thr}")
         if (lv.edge <= 0).any(): e15.append(f"{fu}: aposta com edge <= 0")
         if str(fu).startswith("FIRST") and lv.duplicated(["janela", "conjunto", "regra", "gameid"]).any(): e15.append(f"{fu}: FIRST com 2 apostas no mesmo jogo")
-    checa("A15 regra de entrada: EV > limiar do funil (0 / 5% / 10%), edge > 0, FIRST com no máximo 1 aposta por jogo", not e15, f"{LV.funil.nunique()} funis" + ("; " + "; ".join(e15[:5]) if e15 else ""))
+    ODR = {r["suf"]: r for r in cfg.get("odd_regras", [])} if cfg.get("funis_odd") else {}         # v5.1: baterias de odd mínima
+    barato = lambda d, r: (d.odd.values < float(r["odd_min"])) & (d.t.isin(r["minutos"]).values if r["minutos"] else np.ones(len(d), bool))
+    for fu, lv in LV.groupby("funil"):
+        suf = next((s_ for s_ in ODR if str(fu).endswith(s_)), None)
+        if suf and barato(lv, ODR[suf]).any(): e15.append(f"{fu}: {int(barato(lv, ODR[suf]).sum())} apostas com sinal barato (odd < {ODR[suf]['odd_min']} nos minutos {ODR[suf]['minutos'] or 'todos'})")
+    checa("A15 regra de entrada: EV > limiar do funil (0 / 5% / 10%), edge > 0, FIRST com no máximo 1 aposta por jogo" + (", nenhuma aposta com odd abaixo do mínimo nas baterias v5.1" if ODR else ""),
+          not e15, f"{LV.funil.nunique()} funis" + ("; " + "; ".join(e15[:5]) if e15 else ""))
+    # A16 (v5.1): cada bateria de odd mínima refeita do LIVRO DA PADRÃO, nos pares em que a regra escolheu a MESMA opção nas duas (lá os sinais são os mesmos)
+    if ODR:
+        e16, n16, nj16 = [], 0, 0; K = ["janela", "conjunto", "regra", "par_a"]
+        for fo in [f for f in LV.funil.unique() if any(str(f).endswith(s_) for s_ in ODR)]:
+            suf = next(s_ for s_ in ODR if str(fo).endswith(s_)); r = ODR[suf]; fb = str(fo)[: -len(suf)]
+            if fb not in set(LV.funil): e16.append(f"{fo}: livro da padrão {fb} ausente"); continue
+            mt = t2[t2.funil == fo][["janela", "conjunto", "regra", "a", "b", "escolhida"]].merge(t2[t2.funil == fb][["janela", "conjunto", "regra", "a", "escolhida"]],
+                                                                                                     on=["janela", "conjunto", "regra", "a"], suffixes=("_o", "_b"))
+            mt = mt[(mt.escolhida_o == mt.escolhida_b) & mt.escolhida_o.notna() & (mt.escolhida_o != "NAO_APOSTA")]
+            mt = mt[mt.set_index(["janela", "conjunto"]).index.isin(LV[LV.funil == fo].set_index(["janela", "conjunto"]).index.unique())].rename(columns={"a": "par_a"})
+            if not len(mt): continue
+            n16 += len(mt); nj16 += int((mt.b - mt.par_a).sum())
+            lb = LV[LV.funil == fb].merge(mt[K], on=K); lo = LV[LV.funil == fo].merge(mt[K], on=K)
+            lb = lb.sort_values(K + ["gameid", "t"], kind="mergesort"); lb["_bar"] = barato(lb, r); G_ = K + ["gameid"]
+            if r["modo"] == "abandona":
+                t_ab = lb[lb._bar].groupby(G_).t.min().rename("_tab")
+                esp = lb.merge(t_ab, left_on=G_, right_index=True, how="left"); esp = esp[~(esp.t >= esp._tab)]
+                if str(fo).startswith("FIRST"): esp = esp.groupby(G_, sort=False).head(1)
+                exato, parcial = esp, None
+            elif str(fo).startswith("MULTI"):
+                exato, parcial = lb[~lb._bar], None
+            else:                                                                                # FIRST continua: aposta da padrão barata → a bateria entra DEPOIS ou não entra
+                exato, parcial = lb[~lb._bar], lb[lb._bar]
+            chave = G_ + ["t", "side", "odd"]
+            lo_ex = lo.merge(parcial[G_], on=G_, how="left", indicator=True).query("_merge == 'left_only'").drop(columns="_merge") if parcial is not None and len(parcial) else lo
+            cmp_ = lo_ex[chave].astype(str).merge(exato[chave].astype(str), how="outer", indicator=True)
+            if (cmp_._merge != "both").any(): e16.append(f"{fo}: {int((cmp_._merge != 'both').sum())} apostas ≠ refeitas da padrão (ex.: {cmp_[cmp_._merge != 'both'].head(2).to_dict('records')})")
+            if parcial is not None and len(parcial):
+                y = lo.merge(parcial[G_ + ["t"]].rename(columns={"t": "_tb"}), on=G_)
+                if len(y) and ((y.t <= y._tb).any() or barato(y, r).any()): e16.append(f"{fo}: FIRST continua apostou no minuto do sinal barato ou antes, ou numa odd barata")
+        checa("A16 (v5.1) baterias de odd mínima refeitas do livro da PADRÃO nos pares com a mesma opção escolhida: CONT/MIN = padrão sem os sinais baratos "
+              "(FIRST: entra depois ou não entra), ABAN = padrão cortada no 1º sinal barato", not e16 and n16 > 0,
+              f"{n16} pares × regra conferidos ({nj16} jogos)" + ("; " + "; ".join(e16[:5]) if e16 else ""))
     # A14: ROI, ROI esperado, CLV e nº de apostas do resumo == livro
     e14, n14 = [], 0
     for (fu, jan, conj, regra), lv in LV.groupby(["funil", "janela", "conjunto", "regra"]):

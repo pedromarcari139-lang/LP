@@ -27,7 +27,10 @@ echo  AUDITORIA INDEPENDENTE DAS SAIDAS ^(auditar_saidas.py^)...
 ".venv\Scripts\python.exe" -u auditar_saidas.py OUT_FUNIL_CONTINUACAO
 if errorlevel 1 goto :falhou
 echo.
-echo  TERMINOU ^(auditoria OK^). Traga a pasta OUT_FUNIL_CONTINUACAO ^(o essencial: RESUMO_FUNIL.txt, PROXIMAS_ESCOLHAS.txt e AUDITORIA_SAIDAS.txt^).
+echo  DIAGNOSTICO DE ODDS BAIXAS ^(analisar_odds_baixas.py; so descritivo, nao para o resto se falhar^)...
+".venv\Scripts\python.exe" -u analisar_odds_baixas.py OUT_FUNIL_CONTINUACAO
+echo.
+echo  TERMINOU ^(auditoria OK^). Traga a pasta OUT_FUNIL_CONTINUACAO ^(o essencial: RESUMO_FUNIL.txt, PROXIMAS_ESCOLHAS.txt, AUDITORIA_SAIDAS.txt e ODDS_BAIXAS.txt^).
 pause
 exit /b 0
 

@@ -1,10 +1,36 @@
-VALIDAR FUNIL (v5.0 — EV>0/5%/10%, CLV e markout, modo sombra, ROI × esperado, variância, rolling/alarmes, gráficos; continuação; por minuto; próxima escolha)
+VALIDAR FUNIL (v5.1 — + baterias de ODD MÍNIMA no começo; v5.0 — EV>0/5%/10%, CLV e markout, modo sombra, ROI × esperado, variância, rolling/alarmes, gráficos; continuação; por minuto; próxima escolha)
 ================================================
 
 O QUE É
   Um script NOVO, separado da rodada oficial. Não mexe em nada da etapa 1, não grava DECISAO e não prevê nenhum jogo >= 8448.
   Ele usa o motor (backtest_sujo.py / backtest_limpo.py), o .venv e a BANCO_PREVISOES que JÁ estão na pasta do RODAR.bat.
 
+v5.1 (04/10): TUDO da v5.0 continua IGUAL (mesmos funis, mesmos números). A MAIS — teoria "odd baixa no começo (T10/T15) não vale a pena":
+  - 12 funis NOVOS rodando em PARALELO à padrão (1,01–7,00), com a regra de entrada de hoje (EV > 0), FIRST e MULTI:
+      _CONT130 / _CONT150: em T10/T15, sinal com odd < 1,30 (ou 1,50) é IGNORADO e o jogo continua sendo olhado
+                           (FIRST entra no 1º minuto válido depois; MULTI só pula aquele minuto). De T20 a T35 nada muda.
+      _ABAN130 / _ABAN150: em T10/T15, no 1º sinal com odd < 1,30 (ou 1,50) o jogo é LARGADO: nada naquele minuto nem depois
+                           (FIRST fica sem aposta no jogo; MULTI mantém as apostas anteriores ao sinal barato).
+      _MIN130  / _MIN150 : CONTROLE — mínimo de 1,30 (ou 1,50) em TODOS os minutos ("1,30 até 7,00"). Separa "odd baixa é ruim" de
+                           "odd baixa NO COMEÇO é ruim".
+    O universo de jogos (denominador do PPG) é o MESMO da padrão: a comparação é pareada jogo a jogo. Cada regra re-escolhe o modelo × flag
+    em cada bateria só com o passado (as métricas de aposta mudam com a regra de entrada; as de previsão, não).
+  - RESUMO_FUNIL.txt: nova seção "ODD MÍNIMA" (PPG / ROI / nº de apostas de cada bateria e Δ PPG contra a padrão com z por cluster).
+    Detalhes: odd_comparacao_pareada.csv; cada bateria completa (IC, risco, acaso, MCS, CLV) no resumo_funil.csv (funis *_CONT*/*_ABAN*/*_MIN*).
+    PROXIMAS_ESCOLHAS.txt: próxima escolha de cada regra em cada bateria (janela própria, todas as opções).
+  - analisar_odds_baixas.py (roda sozinho no fim do .bat; também dá para rodar na saída da v5.0, SEM refazer o funil):
+      python analisar_odds_baixas.py OUT_FUNIL_CONTINUACAO   → ODDS_BAIXAS.txt e odds_baixas_diagnostico.csv
+    Por minuto (T10, T15, T20+) × faixa de odd (<1,30 · 1,30–1,50 · 1,50–2,00 · 2,00–3,00 · >=3,00): acerto real × necessário, ROI [IC],
+    EV previsto, ROI − EV (z) = "falso positivo?", CLV, markout +5/+10/+15 (negativo = a odd subiu depois) e % em que a odd do mesmo lado
+    passou do limite depois (usa o futuro: só descritivo). É DESCRITIVO; quem decide é a tabela ODD MÍNIMA do RESUMO.
+  - Auditoria: A15 confere que nenhuma bateria apostou abaixo do mínimo; A16 refaz cada bateria a partir do livro da padrão nos pares em
+    que a regra escolheu a mesma opção nas duas (CONT/MIN = padrão sem os sinais baratos; ABAN = padrão cortada no 1º sinal barato).
+  - CUIDADO: 6 baterias × 2 políticas × regras = muita seleção. Só trocaria a regra de entrada com Δ pareado consistente (z >= 2) em FIRST e
+    MULTI e nos períodos limpos, e de preferência confirmado em sombra nos jogos novos.
+  - Demora mais: 36 funis em vez de 24 (os 12 novos são funis completos, com sombra/monitor): estimo +50% a +80% de tempo (NÃO medi no real).
+    Quer só uma parte? No topo do validar_funil.py: TESTAR_ODD_MIN = False desliga tudo; ou apague linhas de ODD_REGRAS.
+  - A saída vai para a MESMA pasta (OUT_FUNIL ou OUT_FUNIL_CONTINUACAO): renomeie a pasta da v5.0 antes se quiser guardá-la.
+  - Copie: validar_funil.py, auditar_saidas.py, analisar_odds_baixas.py, RODAR_FUNIL.bat, RODAR_FUNIL_CONTINUACAO.bat, LEIA_FUNIL.txt.
 v5.0 (03/10): o que já existia continua IGUAL (mesmos números com a entrada de hoje). A MAIS:
   - TODAS as técnicas com 3 regras de entrada: hoje (edge = p − 1/odd > 0, que é EXATAMENTE EV = p·odd − 1 > 0), EV > 5% e EV > 10% (funis _EV5 / _EV10).
   - CLV e MARKOUT do lado apostado: o mercado (prob. sem margem) 5, 10, 15, 20 e 25 minutos depois — % a favor, quanto andou a favor e contra, "ROI do

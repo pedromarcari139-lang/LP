@@ -82,3 +82,25 @@ Estado: revisão adversarial independente CONCLUÍDA (6 revisores + céticos); a
 | A13 é consistência, não prova de não-vazamento | baixa | — | rótulo corrigido (a prova é a sabotagem) |
 | jogos simultâneos na fronteira dos pares (embargo 0) | — | cético: premissa do usuário, não defeito | LEIA recomenda rodar também com EMBARGO_ESCOLHA = 2 |
 | EV calibrado com viés de seleção (winner's curse) nas regras | baixa | — | documentado: compare com BASE (opção fixa, sem esse viés) |
+
+## 7. v5.1 (04/10/2026) — baterias de ODD MÍNIMA (teoria do usuário: odd baixa em T10/T15 não vale a pena)
+**O que muda:** 12 funis a mais (FIRST e MULTI × 6 baterias), com a regra de entrada de hoje (EV > 0). Nada nos funis da v5.0 muda.
+
+| bateria | regra |
+|---|---|
+| `_CONT130` / `_CONT150` | em T10/T15, sinal com odd < 1,30 / 1,50 é ignorado e o jogo continua sendo olhado (filtro_col do motor: a linha não passa) |
+| `_ABAN130` / `_ABAN150` | em T10/T15, no 1º sinal barato o jogo é largado: nada nesse minuto nem depois (`abandonar_jogo` sobre TODOS os sinais da padrão = apostas MULTI) |
+| `_MIN130` / `_MIN150` | controle: mínimo em todos os minutos |
+
+"Sinal" = o lado escolhido (maior edge) passa a regra de hoje (edge > 0, odd 1,01–7,00, flag se houver). O ODD_MIN do motor NÃO muda: o universo
+G (denominador do PPG) e os jogos avaliados são os mesmos da padrão (assert no código ao montar `odd_comparacao_pareada.csv`).
+
+**Vazamento:** CONT/MIN usam só a odd da própria linha (jogo, minuto). ABAN usa o 1º sinal barato do MESMO jogo em minuto <= ao da aposta
+(nunca minuto posterior); teste unitário: apagar T20 não muda T10/T15. A escolha continua só com o histórico < par − embargo (mesma
+`matriz_metricas`); a sabotagem interna (futuro trocado por ruído) roda também nos 12 funis novos; a sabotagem de ponta a ponta foi refeita.
+
+**Auditoria nova:** A15 (nenhuma aposta abaixo do mínimo nas baterias) e A16 (cada bateria refeita do livro da padrão nos pares em que a regra
+escolheu a mesma opção nas duas: CONT/MIN = padrão sem os sinais baratos — no FIRST, entra depois ou não entra; ABAN = padrão cortada no 1º sinal barato).
+
+**Diagnóstico:** `analisar_odds_baixas.py` (descritivo, lê só as saídas): por minuto × faixa de odd, acerto real × necessário, ROI, EV previsto,
+ROI − EV (z), CLV, markout e % em que a odd do mesmo lado passou do limite depois (usa o futuro do jogo — só descritivo, não é regra).
