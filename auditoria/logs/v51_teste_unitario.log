@@ -1,0 +1,14 @@
+OK  sinal barato (mínimo 1,50 em T10/T15): odd 1,40 no T10 e 1,20 no T15 → sim; 1,45 no T20 → não; 1,60 → não
+OK  mínimo em TODOS os minutos: 1,45 no T20 → barato
+OK  PADRÃO MULTI: sinais em (1,10) (1,15) (1,20) (2,10) (2,15) (2,20) (3,15): [(1, 10), (1, 15), (1, 20), (2, 10), (2, 15), (2, 20), (3, 15)]
+OK  PADRÃO FIRST: (1,10) (2,10) (3,15)
+OK  CONTINUA 1,50 FIRST: jogo 1 pula o T10 barato e entra no T15 (1,60); jogo 2 igual (T10 2,00); jogo 3 sem aposta (T15 barato, T20 sem sinal): [(1, 15), (2, 10)]
+OK  CONTINUA 1,50 MULTI: tira só os sinais baratos de T10/T15 (1,10) (2,15) (3,15); o T20 de 1,45 fica: [(1, 15), (1, 20), (2, 10), (2, 20)]
+OK  ABANDONA 1,50 FIRST: jogo 1 largado no T10 (1º sinal barato) → sem aposta; jogo 2 aposta no T10 (2,00); jogo 3 largado no T15: [(2, 10)]
+OK  ABANDONA 1,50 MULTI: jogo 1 nada; jogo 2 só o T10 (largado no T15 barato, o T20 não entra); jogo 3 nada: [(2, 10)]
+OK  lucro das apostas que ficam = o da padrão (mesmas linhas)
+OK  MÍNIMO 1,50 EM TODOS: FIRST (1,15) (2,10); MULTI (1,15) (2,10) (2,20) — o T20 de 1,45 do jogo 1 também sai: [(1, 15), (2, 10)] [(1, 15), (2, 10), (2, 20)]
+OK  filtro de odd não faz apostar no outro lado
+OK  ABANDONA: apagar os minutos depois (T20) não muda o que acontece em T10/T15
+OK  funis da v5.1: 6 baterias × FIRST/MULTI = 12, nomes com sufixo, EV0
+13 verificações OK

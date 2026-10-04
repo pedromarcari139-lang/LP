@@ -1,0 +1,6 @@
+[OK ] livro de apostas dos pares < 600 idêntico (inclui CLV, fechamento, q em t+5…t+25, EV e EV calibrado) — (371132, 29) · max|Δ| 0.00e+00 · texto igual · vazios iguais
+      (controle) apostas nos pares >= 600: 113021 × 115100
+[OK ] eventos do MODO SOMBRA com decisão <= 600 idênticos — (32327, 15) · max|Δ| 0.00e+00 · texto igual · vazios iguais
+[OK ] tabela de odds dos jogos < 600 idêntica — (7315, 5) · max|Δ| 0.00e+00 · texto igual · vazios iguais
+      (controle) próximas escolhas iguais: 1170 de 3312 (podem mudar: usam o histórico até o último jogo)
+RESULTADO: TUDO OK

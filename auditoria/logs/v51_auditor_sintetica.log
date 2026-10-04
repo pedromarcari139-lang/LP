@@ -1,0 +1,38 @@
+AUDITORIA INDEPENDENTE de /tmp/claude-0/-home-user-LP/7b6115f9-1666-52ba-8b03-21c240b51c20/scratchpad/v51/A/OUT_FUNIL · lockbox 700 · PASSO 2 · PASSO_ESCOLHA 2 · MIN_HIST 50 · embargo 0
+[OK ] A1 nenhum jogo do lockbox nas saídas — 30 arquivos lidos
+[OK ] A2a treino termina antes do par (gid_treino_max < início do par) — 11688 treinos · folga mínima 1
+[OK ] A2b cada treino prevê um único par
+[OK ] A2c um treino por (motor, minuto, candidato, par)
+[OK ] A3 toda previsão tem o treino do seu par, terminado antes do par — 49428 previsões · 11688 (minuto, candidato, par)
+[OK ] A4a pares contíguos de <= PASSO_ESCOLHA jogos — 250 pares
+[OK ] A4b nº de opções elegíveis recalculado == gravado — 250 decisões sorteadas × conjuntos · 0 divergências
+[OK ] A4c a opção escolhida era elegível na decisão — 0 escolhas não elegíveis
+[OK ] A5 regras ppg/lucro/roi recalculadas do zero == trilhas (escolha e PPG histórico) — 97200 decisões conferidas em 432 combinações · 0 divergências
+[OK ] A6 PPG do procedimento 'ppg' recalculado == resumo_funil — 144 combinações · dif máx 1.11e-16
+[OK ] A10 próxima escolha (regras ppg/lucro/roi) recalculada do zero == proximas_escolhas.csv; decisão <= lockbox — 432 próximas escolhas conferidas
+[OK ] A8 livro de apostas == lucro por par das trilhas == PPG e nº de apostas do resumo; aposta só da opção escolhida no par — 1656 séries (regra × funil × janela × conjunto) · 484153 apostas
+[OK ] A9 ensemble por minuto refeito do livro dos funis T10…T35 (FIRST = 1º minuto com aposta; MULTI = todos) == ensemble_minutos.csv — 276 séries · minutos ['T10_EV5', 'T15_EV5', 'T20_EV5', 'T25_EV5', 'T30_EV5', 'T35_EV5']
+[OK ] A11 CLV/markout refeitos da tabela de odds (q em t+h do mesmo jogo/lado; fechamento = última odd do jogo DEPOIS da aposta) == livro — 484153 apostas · 444148 com fechamento · horizontes [5, 10, 15, 20, 25]
+[OK ] A12 EV calibrado: última aposta usada na calibração < início do par − embargo; sem histórico suficiente = EV do modelo; EV = p·odd − 1 — 484153 apostas com histórico de calibração · violações 0/0/0
+[OK ] A15 regra de entrada: EV > limiar do funil (0 / 5% / 10%), edge > 0, FIRST com no máximo 1 aposta por jogo, nenhuma aposta com odd abaixo do mínimo nas baterias v5.1 — 36 funis
+[OK ] A16 (v5.1) baterias de odd mínima refeitas do livro da PADRÃO nos pares com a mesma opção escolhida: CONT/MIN = padrão sem os sinais baratos (FIRST: entra depois ou não entra), ABAN = padrão cortada no 1º sinal barato — 97746 pares × regra conferidos (195492 jogos)
+[OK ] A14 ROI, ROI esperado (EV do modelo e calibrado), CLV, % supera e nº de apostas do resumo == recalculados do livro — 1656 séries
+[OK ] A13 (CONSISTÊNCIA, não prova de não-vazamento — essa vem da sabotagem) MODO SOMBRA refeito dos eventos: decisões só com >= N_SOMBRA jogos de sombra, sombra começa antes do par, promoção ⇔ métrica da sombra > produção; produção por par refeita dos eventos dá o PPG do sombra.csv — 1656 séries · 1711 promoções · 2185 rejeições
+[OK ] A7 índices: último jogo do histórico e do treino < início do par — tabela em auditoria_indices.csv
+              funil  decisao_a par_jogos               escolhida janela_historico  ultimo_jogo_no_historico  jogos_no_historico_da_escolhida  opcoes_elegiveis  treino_da_previsao_usada_ate
+        FIRST_10a35        692   692–693   TUDO_INI_CALR|bipro30       [420, 692)                       691                              272                81                           691
+FIRST_10a35_CONT130        266   266–267      V6WR_MOM|cWRgrande       [200, 266)                       265                               66                18                           265
+FIRST_10a35_CONT130        296   296–297      V6WR_MOM|cWRgrande       [200, 296)                       295                               95                18                           295
+FIRST_10a35_CONT130        610   610–611 TUDO_INI_CALR|cWRgrande       [420, 610)                       609                              190                81                           609
+   FIRST_10a35_EV10        360   360–361                  V6_INI       [200, 360)                       359                              158                18                           359
+MULTI_10a35_ABAN130        288   288–289    V6E_MOM|cPROBSgrande       [200, 288)                       287                               87                18                           287
+MULTI_10a35_ABAN130        478   478–479    TUDO_INI_CALR|bisolo       [420, 478)                       477                               58                81                           477
+MULTI_10a35_ABAN150        346   346–347    V6E_MOM|cPROBSgrande       [200, 346)                       345                              144                18                           345
+ MULTI_10a35_MIN150        312   312–313    V6E_INI|cPROBSgrande       [200, 312)                       311                              110                18                           311
+                T10        360   360–361                 V6E_INI       [200, 360)                       359                              158                18                           359
+                T15        338   338–339                 V6E_INI       [200, 338)                       337                              136                18                           337
+            T15_EV5        280   280–281       V6E_MOM|cWRgrande       [200, 280)                       279                               79                18                           279
+            T15_EV5        296   296–297                 V6E_INI       [200, 296)                       295                               95                18                           295
+                T35        572   572–573    V6WR_MOM|bipro35mais       [420, 572)                       571                              152                81                           571
+            T35_EV5        260   260–261    V6E_INI|cPROBSgrande       [200, 260)                       259                               60                18                           259
+RESULTADO: TUDO OK
