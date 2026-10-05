@@ -30,7 +30,10 @@ v5.1 (04/10): TUDO da v5.0 continua IGUAL (mesmos funis, mesmos números). A MAI
   - Demora mais: 36 funis em vez de 24 (os 12 novos são funis completos, com sombra/monitor): estimo +50% a +80% de tempo (NÃO medi no real).
     Quer só uma parte? No topo do validar_funil.py: TESTAR_ODD_MIN = False desliga tudo; ou apague linhas de ODD_REGRAS.
   - A saída vai para a MESMA pasta (OUT_FUNIL ou OUT_FUNIL_CONTINUACAO): renomeie a pasta da v5.0 antes se quiser guardá-la.
-  - Copie: validar_funil.py, auditar_saidas.py, analisar_odds_baixas.py, RODAR_FUNIL.bat, RODAR_FUNIL_CONTINUACAO.bat, LEIA_FUNIL.txt.
+  - "O PADRÃO SE MANTÉM DESDE 6115?": as tabelas LIMIAR DE EV e ODD MÍNIMA do RESUMO têm, para cada regra, uma linha "só >= 6115" (PPG / ROI / apostas e o
+    Δ pareado só nesses jogos); ev_/odd_comparacao_pareada.csv ganham as colunas *_desde_6115. O analisar_odds_baixas.py repete o diagnóstico só com
+    jogos >= 6115, e o ver_vencedores.py mostra o recorte >= 6115 de cada vencedor (e ordena por ele com --ordenar desde).
+  - Copie: validar_funil.py, auditar_saidas.py, analisar_odds_baixas.py, ver_vencedores.py, RODAR_FUNIL.bat, RODAR_FUNIL_CONTINUACAO.bat, LEIA_FUNIL.txt.
 v5.0 (03/10): o que já existia continua IGUAL (mesmos números com a entrada de hoje). A MAIS:
   - TODAS as técnicas com 3 regras de entrada: hoje (edge = p − 1/odd > 0, que é EXATAMENTE EV = p·odd − 1 > 0), EV > 5% e EV > 10% (funis _EV5 / _EV10).
   - CLV e MARKOUT do lado apostado: o mercado (prob. sem margem) 5, 10, 15, 20 e 25 minutos depois — % a favor, quanto andou a favor e contra, "ROI do

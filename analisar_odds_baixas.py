@@ -29,6 +29,7 @@ ap.add_argument("--regras", default="bsskill_todas,llskill_todas,sortino,roi,ppg
 ap.add_argument("--todas-regras", action="store_true")
 ap.add_argument("--funis", default="FIRST_10a35,MULTI_10a35")
 ap.add_argument("--limites", default="1.30,1.50")
+ap.add_argument("--desde", type=int, default=None, help="2º recorte: só jogos >= este gameid (padrão: início das opções com draft no config_funil.json, 6115 no real)")
 a = ap.parse_args()
 PASTA = a.pasta or ("OUT_FUNIL_CONTINUACAO" if os.path.isdir("OUT_FUNIL_CONTINUACAO") else "OUT_FUNIL")
 FAIXAS_ODD = [1.0, 1.30, 1.50, 2.00, 3.00, np.inf]                       # decididas antes de olhar resultado
@@ -63,17 +64,23 @@ if OD is not None:                                                         # mai
     u = LV[["gameid", "_s", "t"]].drop_duplicates().merge(OD[["gameid", "_s", "t", "odd"]].rename(columns={"t": "_t2", "odd": "_o2"}), on=["gameid", "_s"])
     u = u[u._t2 > u.t].groupby(["gameid", "_s", "t"])._o2.max().rename("odd_max_depois").reset_index()
     LV = LV.merge(u, on=["gameid", "_s", "t"], how="left")
+import json
+try: DESDE = a.desde or int(json.load(open(os.path.join(PASTA, "config_funil.json"), encoding="utf-8")).get("inicio_opcoes_draft"))
+except Exception: DESDE = a.desde
+PERIODOS = [("todos", -np.inf)] + ([(f">={DESDE}", DESDE)] if DESDE else [])      # v5.1: o mesmo diagnóstico só na fase com draft (o padrão se mantém?)
 LV["faixa_odd"] = pd.cut(LV.odd, FAIXAS_ODD, right=False, labels=ROT_ODD)
 LV["faixa_min"] = LV.t.map({m: n for n, ms in FAIXAS_MIN for m in ms})
 
 linhas = []
-for (fu, rg), d0 in LV.groupby(["funil", "regra"], sort=False):
+for (fu, rg), d00 in LV.groupby(["funil", "regra"], sort=False):
+  for pn, pa in PERIODOS:
+    d0 = d00[d00.gameid >= pa]
     for fm, _ms in FAIXAS_MIN:
         for fo in ROT_ODD:
             d = d0[(d0.faixa_min == fm) & (d0.faixa_odd == fo)]
             if not len(d): continue
             roi, se = media_se(d.lucro, d.gameid); dif, se_d = media_se(d.lucro - d.ev, d.gameid)
-            r_ = dict(funil=fu, regra=rg, minuto=fm, faixa_odd=fo, n=len(d), odd_media=d.odd.mean(), acerto=d.y.mean(), acerto_necessario=(1 / d.odd).mean(),
+            r_ = dict(funil=fu, regra=rg, periodo=pn, minuto=fm, faixa_odd=fo, n=len(d), odd_media=d.odd.mean(), acerto=d.y.mean(), acerto_necessario=(1 / d.odd).mean(),
                       roi=roi, roi_ic_lo=roi - 1.96 * se if np.isfinite(se) else np.nan, roi_ic_hi=roi + 1.96 * se if np.isfinite(se) else np.nan,
                       ev_modelo=d.ev.mean(), roi_menos_ev=dif, z_roi_menos_ev=dif / se_d if se_d and se_d > 0 else np.nan,
                       clv_fech=d.clv_fech.mean(), n_com_fech=int(d.clv_fech.notna().sum()), pouca_amostra=len(d) < MIN_N)
@@ -93,8 +100,8 @@ diz(f"ODDS BAIXAS NO COMEÇO — diagnóstico descritivo do livro de apostas · 
 diz("Colunas: n · odd média · acerto real / necessário (1/odd) · ROI [IC 95%] · EV previsto · ROI−EV (z; muito < 0 = modelo otimista = 'falso positivo') · CLV fech · "
     "mk+5/+10/+15 (< 0 = odd SUBIU depois) e % com odd subindo em +5 · % com odd do mesmo lado >= " + "/".join(f"{L:.2f}" for L in LIMITES) +
     " em algum minuto posterior (<= T" + str(t_max_aposta) + ", usa o futuro: só descritivo) · (*) = menos de " + str(MIN_N) + " apostas")
-for (fu, rg), x in RES.groupby(["funil", "regra"], sort=False):
-    diz(f"\n=== {fu} · regra {rg}")
+for (fu, rg, pn), x in RES.groupby(["funil", "regra", "periodo"], sort=False):
+    diz(f"\n=== {fu} · regra {rg} · jogos {pn}")
     for _, r in x.iterrows():
         diz(f"   {r.minuto:<4} odd {r.faixa_odd:<10} n {int(r.n):>5}{'(*)' if r.pouca_amostra else '   '} · odd {r.odd_media:.2f} · acerto {r.acerto:.1%}/{r.acerto_necessario:.1%} · "
             f"ROI {f_(r.roi, '+.3f')} [{f_(r.roi_ic_lo, '+.3f')}; {f_(r.roi_ic_hi, '+.3f')}] · EV {f_(r.ev_modelo, '+.3f')} · ROI−EV {f_(r.roi_menos_ev, '+.3f')} (z {f_(r.z_roi_menos_ev, '+.1f')}) · "

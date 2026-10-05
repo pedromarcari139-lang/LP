@@ -1785,6 +1785,11 @@ def main():
                                    "jogos_no_par", "lucro_no_par", "apostas_no_par"]).to_csv(os.path.join(OUT, "trilhas.csv.gz"), index=False)
     pd.DataFrame(opcoes).to_csv(os.path.join(OUT, "opcoes.csv"), index=False)
     CLV_T = pd.DataFrame(clv_rows); CLV_T.to_csv(os.path.join(OUT, "clv_markout.csv"), index=False)                 # v5.0
+    pn_d, pa_d, _pb_d = PX[-1]                                                                  # v5.1: o mesmo Δ pareado só nos jogos da fase limpa com draft (>= ini_draft)
+    def _desde(s0_, s1_):
+        m0 = s0_.index.values >= pa_d; m_, se_ = _media_se(s1_[m0] - s0_[m0])
+        return {f"ppg_0_{pn_d}": float(s0_[m0].mean()) if m0.any() else np.nan, f"ppg_1_{pn_d}": float(s1_[m0].mean()) if m0.any() else np.nan,
+                f"delta_{pn_d}": m_, f"se_{pn_d}": se_, f"z_{pn_d}": m_ / se_ if se_ and se_ > 0 else np.nan, f"n_jogos_{pn_d}": int(m0.sum())}
     evc = []                                                                                    # REVISÃO: EV5/EV10 − EV0 PAREADO (mesmos jogos), z por cluster de 10 gameids
     for f0 in [f for f in FUNIS + FUNIS_MIN if f.get("ev_min") is None]:
         for f1 in [f for f in FUNIS + FUNIS_MIN if f.get("ev_min") is not None and f["politica"] == f0["politica"] and f.get("minuto") == f0.get("minuto")
@@ -1793,7 +1798,7 @@ def main():
                 if fn != f0["nome"] or (f1["nome"], jan, conj, rn) not in SER: continue
                 s1_ = SER[(f1["nome"], jan, conj, rn)].reindex(s0_.index).fillna(0.0); m_, se_ = _media_se(s1_ - s0_)
                 evc.append(dict(funil_ev0=f0["nome"], funil_ev=f1["nome"], limiar_ev=f1["ev_min"], janela=jan, conjunto=conj, regra=rn, n_jogos=len(s0_),
-                                ppg_ev0=float(s0_.mean()), ppg_ev=float(s1_.mean()), delta=m_, se=se_, z=m_ / se_ if se_ and se_ > 0 else np.nan))
+                                ppg_ev0=float(s0_.mean()), ppg_ev=float(s1_.mean()), delta=m_, se=se_, z=m_ / se_ if se_ and se_ > 0 else np.nan, **_desde(s0_, s1_)))
     EVC = pd.DataFrame(evc); EVC.to_csv(os.path.join(OUT, "ev_comparacao_pareada.csv"), index=False)
     odc = []                                                                                    # v5.1: cada bateria de odd mínima − PADRÃO, PAREADO nos mesmos jogos
     for f1 in FUNIS_ODD:
@@ -1805,7 +1810,7 @@ def main():
             assert s1_.index.equals(s0_.index), f"{f1['nome']}/{jan}/{conj}: jogos avaliados diferentes da padrão"   # mesmo universo e mesmos pares
             m_, se_ = _media_se(s1_ - s0_)
             odc.append(dict(funil_padrao=f0["nome"], funil_odd=f1["nome"], modo=r_["modo"], odd_min=r_["odd_min"], minutos=str(r_["minutos"] or "todos"), janela=jan, conjunto=conj,
-                            regra=rn, n_jogos=len(s0_), ppg_padrao=float(s0_.mean()), ppg_odd=float(s1_.mean()), delta=m_, se=se_, z=m_ / se_ if se_ and se_ > 0 else np.nan))
+                            regra=rn, n_jogos=len(s0_), ppg_padrao=float(s0_.mean()), ppg_odd=float(s1_.mean()), delta=m_, se=se_, z=m_ / se_ if se_ and se_ > 0 else np.nan, **_desde(s0_, s1_)))
     ODC = pd.DataFrame(odc); ODC.to_csv(os.path.join(OUT, "odd_comparacao_pareada.csv"), index=False)
     SB = pd.DataFrame(sombra_rows); SB.to_csv(os.path.join(OUT, "sombra.csv"), index=False)
     pd.DataFrame(sombra_ev).to_csv(os.path.join(OUT, "sombra_eventos.csv.gz"), index=False)
@@ -1982,7 +1987,7 @@ def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info, EN=None):
     pol_ev = [(f["politica"], f.get("ev_min"), f["nome"]) for f in FUNIS]
     if len({e for _, e, _ in pol_ev}) > 1:
         txt.append("LIMIAR DE EV (mesmas regras, mesmos jogos; só muda a regra de ENTRADA: EV>0 = hoje · EV>5% · EV>10%) — PPG / ROI das apostas / nº de apostas · "
-                   "Δ PPG contra EV>0 PAREADO nos mesmos jogos (z por cluster). ATENÇÃO: escolher o limiar por esta tabela é seleção nos mesmos dados:")
+                   "Δ PPG contra EV>0 PAREADO nos mesmos jogos (z por cluster); linha 'só >= ...' = o mesmo só nos jogos da fase com draft. ATENÇÃO: escolher o limiar por esta tabela é seleção nos mesmos dados:")
         for pol in [f["politica"] for f in FUNIS_BASE]:
             nm_ = [(e, n_) for p_, e, n_ in pol_ev if p_ == pol]
             for (jan, cj), _x in R[R.funil == nm_[0][1]].groupby(["janela", "conjunto"], sort=False):
@@ -1997,13 +2002,19 @@ def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info, EN=None):
                         y_ = EVC_[(EVC_.funil_ev0 == nm_[0][1]) & (EVC_.janela == jan) & (EVC_.conjunto == cj) & (EVC_.regra == (rn if not rn.startswith("BASE_") else "BASE"))]
                         dz = " · " + " ".join(f"Δ{x_.funil_ev.split('_')[-1]} {f_(x_.delta, '+.4f')} (z {f_(x_.z, '+.1f')})" for _, x_ in y_.iterrows())
                     txt.append(f"   {rn.split(' ')[0]:<26} " + " | ".join(f"{c_:>26}" for c_ in cel) + dz)
+                    pn_d = info["PX"][-1][0]; cel_d = []                                          # v5.1: a mesma linha só nos jogos >= início do draft
+                    for e, n_ in nm_:
+                        x = R[(R.funil == n_) & (R.janela == jan) & (R.conjunto == cj) & (R.regra == rn) & (R.cadencia.isin([cad2, "-"]))]
+                        cel_d.append(f"{f_(x[f'ppg_{pn_d}'].iloc[0], '+.4f')} / {f_(x.get(f'roi_apostas_{pn_d}', pd.Series([np.nan])).iloc[0], '+.3f')} / {f_(x.get(f'n_apostas_{pn_d}', pd.Series([np.nan])).iloc[0], '.0f')}" if (len(x) and f'ppg_{pn_d}' in x) else "n/d")
+                    dz_d = (" · " + " ".join(f"Δ{x_.funil_ev.split('_')[-1]} {f_(x_[f'delta_{pn_d}'], '+.4f')} (z {f_(x_[f'z_{pn_d}'], '+.1f')})" for _, x_ in y_.iterrows())) if (EVC_ is not None and len(EVC_) and f"delta_{pn_d}" in EVC_) else ""
+                    txt.append(f"   {'  só ' + pn_d.replace('desde_', '>= '):<26} " + " | ".join(f"{c_:>26}" for c_ in cel_d) + dz_d)
         txt.append("")
     ODC = info.get("ODC")
     if FUNIS_ODD and ODC is not None and len(ODC):                                              # v5.1: ODD MÍNIMA (sinal barato no começo)
         sufs = [r_["suf"] for r_ in ODD_REGRAS]
         txt.append("ODD MÍNIMA (v5.1; mesmas regras, mesmos jogos, regra de entrada de hoje EV > 0; só muda o tratamento do SINAL BARATO = lado escolhido com odd < mínimo): "
                    "CONT = ignora o sinal barato em T10/T15 e continua olhando o jogo · ABAN = no 1º sinal barato em T10/T15 larga o jogo (nada nesse minuto nem depois) · "
-                   "MIN = mínimo em TODOS os minutos. Célula = PPG / ROI das apostas / nº de apostas; linha de baixo = Δ PPG contra a PADRÃO, PAREADO (z por cluster). "
+                   "MIN = mínimo em TODOS os minutos. Célula = PPG / ROI das apostas / nº de apostas; linha de baixo = Δ PPG contra a PADRÃO, PAREADO (z por cluster); as 2 linhas seguintes = o MESMO só nos jogos >= início do draft (o padrão se mantém?). "
                    "ATENÇÃO: 6 baterias × regras = seleção múltipla; |z| < 2 não é evidência.")
         for pol in [f["politica"] for f in FUNIS_BASE]:
             f0 = next(f["nome"] for f in FUNIS if f.get("ev_min") is None and f["politica"] == pol)
@@ -2018,6 +2029,12 @@ def escrever_resumo(R, PR, MC, MT, P, CP, DA, MI, info, EN=None):
                     y_ = ODC[(ODC.funil_padrao == f0) & (ODC.janela == jan) & (ODC.conjunto == cj) & (ODC.regra == (rn if not rn.startswith("BASE_") else "BASE"))].set_index("funil_odd")
                     txt.append(f"   {rn.split(' ')[0]:<20} " + " | ".join(f"{c_:>23}" for c_ in cel))
                     txt.append(f"   {'':<20} {'Δ (z) →':>23} | " + " | ".join(f"{(f_(y_.loc[n].delta, '+.4f') + ' (' + f_(y_.loc[n].z, '+.1f') + ')') if n in y_.index else 'n/d':>23}" for _, n in fo))
+                    pn_d = info["PX"][-1][0]; cel_d = []                                          # v5.1: só jogos >= início do draft — o padrão se mantém?
+                    for n_ in [f0] + [n for _, n in fo]:
+                        x = R[(R.funil == n_) & (R.janela == jan) & (R.conjunto == cj) & (R.regra == rn) & (R.cadencia.isin([cad2, "-"]))]
+                        cel_d.append(f"{f_(x[f'ppg_{pn_d}'].iloc[0], '+.4f')}/{f_(x.get(f'roi_apostas_{pn_d}', pd.Series([np.nan])).iloc[0], '+.3f')}/{f_(x.get(f'n_apostas_{pn_d}', pd.Series([np.nan])).iloc[0], '.0f')}" if (len(x) and f'ppg_{pn_d}' in x) else "n/d")
+                    txt.append(f"   {'  só ' + pn_d.replace('desde_', '>= '):<20} " + " | ".join(f"{c_:>23}" for c_ in cel_d))
+                    txt.append(f"   {'':<20} {'Δ (z) →':>23} | " + " | ".join(f"{(f_(y_.loc[n][f'delta_{pn_d}'], '+.4f') + ' (' + f_(y_.loc[n][f'z_{pn_d}'], '+.1f') + ')') if (n in y_.index and f'delta_{pn_d}' in y_.columns) else 'n/d':>23}" for _, n in fo))
         txt.append("   (todas as regras/janelas/conjuntos → odd_comparacao_pareada.csv · cada bateria completa (IC, risco, acaso, MCS, CLV) → resumo_funil.csv, funis *_CONT*/*_ABAN*/*_MIN* "
                    "· próxima escolha em cada bateria → PROXIMAS_ESCOLHAS.txt / proximas_escolhas.csv · diagnóstico por faixa de odd × minuto → analisar_odds_baixas.py)")
         txt.append("")

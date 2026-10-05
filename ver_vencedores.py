@@ -13,11 +13,14 @@ import numpy as np
 import pandas as pd
 
 ap = argparse.ArgumentParser(); ap.add_argument("pasta", nargs="?", default=None); ap.add_argument("--politica", default="FIRST"); ap.add_argument("--top", type=int, default=3)
+ap.add_argument("--ordenar", default="ppg", help="ppg (histórico inteiro) ou desde (só jogos >= início do draft, ex. 6115)")
 a = ap.parse_args()
 PASTA = a.pasta or ("OUT_FUNIL_CONTINUACAO" if os.path.isdir("OUT_FUNIL_CONTINUACAO") else "OUT_FUNIL")
 R = pd.read_csv(os.path.join(PASTA, "resumo_funil.csv"), low_memory=False); MC = pd.read_csv(os.path.join(PASTA, "mcs_reality_check.csv"))
 cad = sorted(c for c in R.cadencia.dropna().unique() if str(c).startswith("a_cada_"))[0]
 funis = [f for f in [f"{a.politica}_10a35", f"{a.politica}_10a35_EV5", f"{a.politica}_10a35_EV10"] if f in set(R.funil)]
+desde = next((c[4:] for c in R.columns if c.startswith("ppg_desde_")), None)                 # v5.1: período só da fase com draft (ex.: desde_6115)
+col_ord = f"ppg_{desde}" if (a.ordenar == "desde" and desde) else "ppg"
 per = [c[4:] for c in R.columns if c.startswith("ppg_") and c[4:] not in ("prometido",) and f"se_{c[4:]}" in R.columns]
 txt = []
 def diz(s=""): print(s, flush=True); txt.append(s)
@@ -37,16 +40,19 @@ def ficha(x, ref=False):
                    f"IC unilateral p={f_(g(x, 'p_unilateral'), '.4f')}")
     lin.append(f"CLV {f_(g(x, 'clv_fech_medio'), '+.3f')} · mk_fech {f_(g(x, 'mk_fech_medio'), '+.4f')} · supera {f_(g(x, 'supera_fech_taxa'), '.0%')} · Brier skill {f_(g(x, 'bsskill_escolhida'), '+.5f')}"
                + (f" · {x.mais_escolhidas}" if isinstance(g(x, 'mais_escolhidas'), str) else ""))
+    if desde:
+        lin.append(f"SÓ {desde.replace('desde_', 'jogos >= ')}: PPG {f_(g(x, 'ppg_' + desde), '+.4f')}±{f_(g(x, 'se_' + desde), '.4f')} · apostas {f_(g(x, 'n_apostas_' + desde), '.0f')} · "
+                   f"ROI {f_(g(x, 'roi_apostas_' + desde), '+.3f')} × esperado {f_(g(x, 'ev_medio_' + desde), '+.3f')} · CLV {f_(g(x, 'clv_fech_' + desde), '+.3f')} · mk_fech {f_(g(x, 'mk_fech_' + desde), '+.4f')}")
     lin.append("PPG por período: " + " · ".join(f"{p} {f_(g(x, 'ppg_' + p), '+.3f')}±{f_(g(x, 'se_' + p), '.3f')}" for p in per))
     return lin
 
-diz(f"VENCEDORES {a.politica} — {os.path.abspath(PASTA)} · top {a.top} por PPG em cada (nível de EV × janela × conjunto) · tudo lido do resumo_funil.csv")
+diz(f"VENCEDORES {a.politica} — {os.path.abspath(PASTA)} · top {a.top} por {'PPG só ' + desde if col_ord != 'ppg' else 'PPG do histórico inteiro'} em cada (nível de EV × janela × conjunto) · tudo lido do resumo_funil.csv")
 diz("ATENÇÃO: escolher a regra (ou o nível de EV) por esta lista é seleção nos mesmos dados; use o Reality Check do bloco e o Δ pareado do RESUMO.")
 for fu in funis:
     for (jan, cj), r in R[R.funil == fu].groupby(["janela", "conjunto"], sort=False):
         mc = MC[(MC.funil == fu) & (MC.janela == jan) & (MC.conjunto == cj)]
         diz(f"\n=== {fu} · janela {jan} · opções {cj} · Reality Check p={f_(mc.rc_p_reality_check.iloc[0], '.4f') if len(mc) else 'n/d'} · MCS: {mc.mcs_regras.iloc[0] if len(mc) else 'n/d'}")
-        top = r[r.cadencia == cad].sort_values("ppg", ascending=False).head(a.top)
+        top = r[r.cadencia == cad].sort_values(col_ord, ascending=False).head(a.top)
         for k, (_, x) in enumerate(top.iterrows(), 1):
             diz(f" {k}º {x.regra}"); [diz("     " + l) for l in ficha(x)]
         base = r[(r.cadencia == "-") & r.regra.str.startswith("BASE_")]
