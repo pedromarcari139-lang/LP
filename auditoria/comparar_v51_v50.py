@@ -5,7 +5,10 @@ import numpy as np
 import pandas as pd
 
 A, B = sys.argv[1], sys.argv[2]; falhas = []; ODD = ("_CONT", "_ABAN", "_MIN1")
-sem_odd = lambda d: d[~d["funil"].astype(str).str.contains("|".join(ODD))] if "funil" in d.columns else d
+def sem_odd(d):                                                                              # tira o que é NOVO: baterias de odd mínima e o conjunto so_INI_puro
+    if "funil" in d.columns: d = d[~d["funil"].astype(str).str.contains("|".join(ODD))]
+    if "conjunto" in d.columns: d = d[d["conjunto"].astype(str) != "so_INI_puro"]
+    return d
 arqs = ["resumo_funil.csv", "trilhas.csv.gz", "apostas_procedimento.csv.gz", "lucro_por_jogo.csv.gz", "comparar_regras.csv", "mcs_reality_check.csv", "sombra.csv",
         "sombra_eventos.csv.gz", "monitor_alarmes.csv", "proximas_escolhas.csv", "ensemble_minutos.csv", "apostas_ensemble.csv.gz", "ev_comparacao_pareada.csv",
         "clv_markout.csv", "distribuicao_acaso.csv", "jogos_comuns.csv.gz", "pareado_2_vs_bloco.csv", "metricas_previsao_resumo.csv", "odds_por_minuto.csv.gz"]

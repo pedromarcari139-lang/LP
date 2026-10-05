@@ -33,6 +33,10 @@ v5.1 (04/10): TUDO da v5.0 continua IGUAL (mesmos funis, mesmos números). A MAI
   - "O PADRÃO SE MANTÉM DESDE 6115?": as tabelas LIMIAR DE EV e ODD MÍNIMA do RESUMO têm, para cada regra, uma linha "só >= 6115" (PPG / ROI / apostas e o
     Δ pareado só nesses jogos); ev_/odd_comparacao_pareada.csv ganham as colunas *_desde_6115. O analisar_odds_baixas.py repete o diagnóstico só com
     jogos >= 6115, e o ver_vencedores.py mostra o recorte >= 6115 de cada vencedor (e ordena por ele com --ordenar desde).
+  - CONJUNTO NOVO "so_INI_puro" (o "so_INI" de antes continua igual, para comparar): o so_INI inclui os modelos _INI_CALR (TUDO_INI_CALR,
+    DRAFT_INI_CALR…), cuja recalibração usa a odd AO VIVO do minuto (logit do q de-vigado) — não é vazamento (é a odd da hora da aposta), mas
+    então eles não são "só abertura". O so_INI_puro tira os _CALR/_CAL: nenhuma odd do momento entra na previsão (a aposta continua na odd ao vivo).
+    Aparece em todos os blocos do RESUMO como "opções: so_INI_puro". Deixa a rodada ~+50% mais demorada (3 conjuntos em vez de 2).
   - Copie: validar_funil.py, auditar_saidas.py, analisar_odds_baixas.py, ver_vencedores.py, RODAR_FUNIL.bat, RODAR_FUNIL_CONTINUACAO.bat, LEIA_FUNIL.txt.
 v5.0 (03/10): o que já existia continua IGUAL (mesmos números com a entrada de hoje). A MAIS:
   - TODAS as técnicas com 3 regras de entrada: hoje (edge = p − 1/odd > 0, que é EXATAMENTE EV = p·odd − 1 > 0), EV > 5% e EV > 10% (funis _EV5 / _EV10).

@@ -34,7 +34,7 @@ CAMADAS
      escolha ao acaso (funções do motor).
   5b) REFERÊNCIAS nos mesmos jogos: BASE (V6_MOM fixo), TODOS os modelos fixos sem flag (MOM e INI) e MOM − INI de cada um, favorito,
      zebra, vig do mercado, acaso (média) e a DISTRIBUIÇÃO DO ACASO (N_ACASO sequências sorteando uma opção elegível a cada par: cada regra
-     ganha o seu percentil e p). Tudo também com as regras escolhendo só entre opções INI (CONJUNTOS["so_INI"]).
+     ganha o seu percentil e p). Tudo também com as regras escolhendo só entre opções INI (CONJUNTOS["so_INI"]) e só INI sem recalibração (CONJUNTOS["so_INI_puro"]).
   6) BRIER / LOG LOSS (metricas_previsao_*.csv): modelo × mercado × skill por período e minuto, nos recortes todas | flag1 | flag0 |
      entrou / não entrou (FIRST e MULTI) | lado apostado.
 NÃO prevê, não lê resultado e não avalia jogo >= LOCKBOX_SERIO (8448). Não escolhe C, não grava DECISAO, não toca na etapa 1.
@@ -100,7 +100,9 @@ REGRAS_EXTRAS = [                                                               
 JANELAS = ["propria", "comum"]
 CONJUNTOS = {                       # conjuntos de opções em que as regras escolhem (cada um é avaliado separado, nos mesmos jogos)
     "todas": lambda op: True,
-    "so_INI": lambda op: bool(re.search(r"_INI(_|$)", op["cand"])),     # só modelos SEM a odd do momento (variante INI: só abertura)
+    "so_INI": lambda op: bool(re.search(r"_INI(_|$)", op["cand"])),     # modelos INI (só a odd de abertura nas features) — INCLUI os _INI_CALR, cuja
+                                                                        # recalibração usa logit(q do minuto) = a odd AO VIVO (sem vazamento: é a odd da decisão)
+    "so_INI_puro": lambda op: bool(re.search(r"_INI$", op["cand"])),    # v5.1: só INI SEM recalibração (_CALR/_CAL fora): nenhuma odd do momento entra na previsão
 }
 SALVAR_APOSTAS = [("propria", "todas"), ("comum", "todas")]   # (janela, conjunto) cujo LIVRO DE APOSTAS do procedimento (cadência a cada 2) é gravado
                                     # em apostas_procedimento.csv.gz: cada aposta de cada regra, com o par, a opção escolhida, odd, p, resultado, lucro e acumulado

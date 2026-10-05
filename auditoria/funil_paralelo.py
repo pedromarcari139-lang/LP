@@ -170,7 +170,7 @@ def metricas(s, l, w, a_h):
     return V
 def escolher(fu_nome, jan, conj, a, lixo=False):
     a_h = a - EMB + A.vazar                                                                     # A.vazar > 0 só no controle negativo
-    el = [i for i, o in enumerate(ops) if o["w"] < a_h and int(((G >= o["w"]) & (G < a_h)).sum()) >= MINH and (conj == "todas" or re.search(r"_INI(_|$)", o["cand"]))]
+    el = [i for i, o in enumerate(ops) if o["w"] < a_h and int(((G >= o["w"]) & (G < a_h)).sum()) >= MINH and (conj == "todas" or (conj == "so_INI" and re.search(r"_INI(_|$)", o["cand"])) or (conj == "so_INI_puro" and re.search(r"_INI$", o["cand"])))]
     if not el: return {r: None for r in REGRAS}
     wc = max(ops[i]["w"] for i in el)
     V = {}

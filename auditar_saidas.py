@@ -83,7 +83,7 @@ checa("A3 toda previsão tem o treino do seu par, terminado antes do par", bool(
 # ---------- A4 ----------
 O = pd.read_csv(os.path.join(PASTA, "opcoes.csv")); U = np.sort(pd.read_csv(os.path.join(PASTA, "universo.csv.gz")).gameid.values)
 O = O.sort_values("nome").reset_index(drop=True); W = O.w.values.astype(np.int64); nomes = O.nome.values
-conj_f = {"todas": lambda n: True, "so_INI": lambda n: bool(re.search(r"_INI(_|$)", n.split("|")[0]))}
+conj_f = {"todas": lambda n: True, "so_INI": lambda n: bool(re.search(r"_INI(_|$)", n.split("|")[0])), "so_INI_puro": lambda n: bool(re.search(r"_INI$", n.split("|")[0]))}
 def elegiveis_em(a, conj):
     fim = a - EMB; n_hist = np.searchsorted(U, fim, "left") - np.searchsorted(U, W, "left")
     return (W < fim) & (n_hist >= MIN_HIST) & np.array([conj_f[conj](n) for n in nomes])
