@@ -1,0 +1,7 @@
+[OK ] P1 cada previsão (minuto, modelo, jogo) tem exatamente 1 treino que a cobre; o treino terminou ANTES do 1º jogo que ele prevê; prevê <= 2 jogos; nada >= lockbox — 24714 (minuto, modelo, jogo) · sem treino 0 · com 2+ treinos 0 · folga mínima treino→teste 1 jogo(s)
+[OK ] P2 universo de jogos executáveis e opções (modelo × flag, início w) refeitos dos zz == universo.csv / opcoes.csv — 498 jogos · 81 opções
+[OK ] P3 apostas de CADA opção em TODOS os funis (FIRST/MULTI, EV 0/5/10, por minuto, odd mínima CONT/ABAN/MIN) refeitas dos zz + previsões == lucro_por_jogo.csv.gz — 36 funis × 81 opções · 371040 (opção, jogo) com aposta
+[OK ] P4 escolha de cada regra refeita SÓ com jogos < início do par − embargo (conta direta, independente) == trilhas e próxima escolha — 71136 escolhas conferidas
+[OK ] P5 (vazamento) as mesmas decisões com tudo de jogo >= início do par trocado por lixo dão a MESMA escolha — 0 decisões mudaram
+[OK ] P6 PPG de cada procedimento (inteiro e só >= 420) e Δ pareados (odd mínima, EV) refeitos com as apostas do paralelo == resumo / *_comparacao_pareada.csv — 2736 procedimentos · 912 Δ de odd mínima · 1216 Δ de EV
+RESULTADO: TUDO IGUAL — a implementação paralela reproduz o funil
